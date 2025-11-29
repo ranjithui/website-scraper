@@ -29,16 +29,33 @@ def groq_ai_analyze(url, text):
 
     prompt = f"""
 You are a B2B sales outreach AI Agent.
-Analyze this website and give:
 
-1️⃣ What the company does (2 lines)
-2️⃣ The ideal targets (3 bullet points)
-3️⃣ Best outreach angle (2 bullet points)
-4️⃣ Suggested email subject line (1 line)
+Analyze the company using the URL and scraped content below.
+
+Provide results in this exact structure:
+
+1️⃣ Company Summary (2 lines)
+
+2️⃣ Ideal Target Audience (3 bullet points)
+
+3️⃣ Best Outreach Angles (2 bullet points)
+
+4️⃣ Email Subject Line (short, 1 line)
+
+5️⃣ Cold Email Pitch (4-6 lines)
+Format example:
+Hello,
+We offer targeted email lists to help you connect with:
+Mining operators and site managers
+Fleet and transport managers
+Safety and compliance officers
+Perfect if you offer services like compliance, fleet performance, or site support.
+Let me know if you'd like a sample.
 
 Website: {url}
 
-Scraped Content: {text}
+Scraped Content:
+{text}
 """
 
     body = {
