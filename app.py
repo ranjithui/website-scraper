@@ -2,148 +2,109 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
-import io
-import os
+import json
 
-# ---------------------------------------
-# STREAMLIT UI SETUP
-# ---------------------------------------
 st.set_page_config(page_title="Website Outreach Agent", layout="wide")
-st.title("🤖 Groq Llama-3 70B Outreach Agent")
-st.write("Provide a company website and get insights + outreach messaging.")
 
-# Sidebar setup
-st.sidebar.header("Groq API Settings")
+# Load API key from Streamlit secrets
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
-# 1️⃣ Load API Key from Streamlit Secrets (for deployment)
-API_KEY = st.secrets.get("GROQ_API_KEY", "")
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL_NAME = "llama3-8b-8192"
 
-# 2️⃣ Optional: Allow override for local testing
-api_key_input = st.sidebar.text_input("Enter Groq API Key (optional override)", type="password")
-if api_key_input:
-    API_KEY = api_key_input.strip()
-
-# Validate Key
-if not API_KEY:
-    st.sidebar.error("❌ API Key missing! Add it in Streamlit Secrets or type above.")
-else:
-    st.sidebar.success("🔐 API Key Loaded")
-
-MODEL = "llama3-70b-8192"
-
-# Sidebar Mode Selector
-mode = st.sidebar.radio("Choose Mode", ["Single URL Analysis", "Bulk CSV Upload"])
-
-# ---------------------------------------
-# FUNCTION: Scrape Website (Simple)
-# ---------------------------------------
 def scrape_website(url):
     try:
-        if not url.startswith("http"):
-            url = "https://" + url
-
-        response = requests.get(url, timeout=10)
-        soup = BeautifulSoup(response.text, "html.parser")
-
-        title = soup.title.string if soup.title else "No title found"
-        paragraphs = " ".join([p.get_text() for p in soup.find_all("p")])[:3000]
-
-        return f"Title: {title}\n\nContent: {paragraphs}"
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+        texts = soup.get_text(separator=" ", strip=True)
+        return texts[:4000]  # limit tokens
     except:
-        return "Unable to scrape content."
+        return ""
 
-
-# ---------------------------------------
-# FUNCTION: Analyze Using Groq LLM
-# ---------------------------------------
-def analyze_content_groq(scraped_content, url):
+def groq_ai_analyze(url, text):
     headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
     }
-    
+
     prompt = f"""
-    You are a B2B sales outreach expert.
-    Analyze the following website content and produce:
+You are a B2B sales outreach AI Agent.
+Analyze this website and give:
 
-    1️⃣ Company Summary  
-    2️⃣ What they likely sell / services  
-    3️⃣ Target customer types  
-    4️⃣ 1 Outreach Email Pitch tailored to their business
-       - Short
-       - No exaggeration
-       - Direct value proposition
+1️⃣ What the company does (2 lines)
+2️⃣ The ideal targets (3 bullet points)
+3️⃣ Best outreach angle (2 bullet points)
+4️⃣ Suggested email subject line (1 line)
 
-    Website: {url}
-    Content:
-    {scraped_content}
-    """
+Website: {url}
 
-    data = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}]
-        }
+Scraped Content: {text}
+"""
+
+    body = {
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7
+    }
 
     try:
-        res = requests.post("https://api.groq.com/openai/v1/chat/completions",
-                            headers=headers, json=data)
-        result = res.json()
-        return result["choices"][0]["message"]["content"]
+        r = requests.post(API_URL, headers=headers, json=body)
+        response = r.json()
+
+        if "choices" not in response:
+            return f"❌ Groq API Unexpected Response: {json.dumps(response, indent=2)}"
+
+        return response["choices"][0]["message"]["content"]
+
     except Exception as e:
-        return f"Groq API Error: {e}"
+        return f"⚠️ API Error: {e}"
 
-
-# ---------------------------------------
-# MODE 1: Single URL
-# ---------------------------------------
-if mode == "Single URL Analysis":
-    url = st.text_input("Enter Website URL (example: www.example.com)")
-
+def analyze_single_url():
+    url = st.text_input("Enter Website URL:")
     if st.button("Analyze"):
-        if not API_KEY:
-            st.error("Please provide an API Key!")
-        elif url:
-            scraped = scrape_website(url)
-            result = analyze_content_groq(scraped, url)
-            st.subheader("📌 Outreach Report")
+        if url:
+            text = scrape_website(url)
+            result = groq_ai_analyze(url, text)
+            st.subheader("Analysis Result")
             st.write(result)
 
+def analyze_bulk():
+    file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
 
-# ---------------------------------------
-# MODE 2: Bulk CSV Upload
-# ---------------------------------------
-else:
-    st.write("Upload CSV file containing URL column")
+    if file is not None:
+        df = pd.read_csv(file)
 
-    uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
+        if "url" not in df.columns:
+            st.error("CSV must contain a 'url' column")
+            return
 
-    if uploaded_file and API_KEY:
-        df = pd.read_csv(uploaded_file)
-
-        # Detect column with URLs
-        url_column = df.columns[0]
-
-        st.write(f"Detected URL column: **{url_column}**")
-
-        if st.button("Start Bulk Outreach"):
+        if st.button("Run Bulk Analysis"):
             results = []
+            progress = st.progress(0)
 
-            with st.spinner("Processing all websites... Please wait ⏳"):
-                for url in df[url_column]:
-                    scraped = scrape_website(str(url))
-                    reply = analyze_content_groq(scraped, str(url))
-                    results.append(reply)
+            for i, row in df.iterrows():
+                url = row["url"]
+                text = scrape_website(url)
+                result = groq_ai_analyze(url, text)
+                results.append({"url": url, "analysis": result})
 
-            df["Outreach Pitch"] = results
+                progress.progress((i + 1) / len(df))
 
-            st.success("Bulk Processing Completed ✔")
-            st.dataframe(df)
+            result_df = pd.DataFrame(results)
+            st.success("Bulk Analysis Completed!")
+            st.dataframe(result_df)
 
-            # Download button
-            csv = df.to_csv(index=False).encode()
-            st.download_button(
-                "📥 Download Outreach Results CSV",
-                csv,
-                "outreach_results.csv",
-                "text/csv"
-            )
+            csv = result_df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download Results CSV", csv, "results.csv", "text/csv")
+
+# UI Layout
+st.title("🌐 Website Outreach AI Agent (Groq)")
+
+mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
+
+if mode == "Single URL":
+    analyze_single_url()
+else:
+    analyze_bulk()
