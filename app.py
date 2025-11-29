@@ -29,34 +29,42 @@ def groq_ai_analyze(url, text):
     }
 
     prompt = f"""
-You are a B2B sales outreach AI Agent. 
+You are a B2B sales outreach AI Agent.
 
-Your task: Analyze the company using the URL and scraped content below, and generate a **ready-to-send cold email pitch** to attract the company to buy targeted email lists from us. 
+Your task: Analyze the company using the URL and scraped content below, and generate a **professional cold email** to attract the company to buy our targeted B2B email lists.
 
-Include the **specific target audience** they likely need to reach, so they are motivated to take action. 
+Requirements for the email:
+
+1. Email Subject: short, catchy, relevant to the company.
+2. Email Body:
+   - Use a **friendly professional tone**.
+   - Include bullets for **target audience**.
+   - Highlight important phrases (like "targeted email lists", "sample list") using bold or emoji ✅ where appropriate.
+   - 4-6 lines, ready-to-send.
+3. Include a clear call-to-action at the end.
 
 Provide results in this exact structure:
 
 1️⃣ Company Summary (2 lines)
 
-2️⃣ Ideal Target Audience (3 bullet points) – mention their customers/clients
+2️⃣ Ideal Target Audience (3 bullet points)
 
 3️⃣ Best Outreach Angles (2 bullet points)
 
 4️⃣ Cold Email in proper format:
-- 📧 Email Subject: short, catchy subject line
-- 📨 Email Body: cold email pitch (4-6 lines), highlighting our email lists and their target audience
+- 📧 Email Subject:
+- 📨 Email Body:
 
 **Format Example:**
 📧 Email Subject: Connect with Key Site Managers
 📨 Email Body:
 Hello,
-We offer targeted email lists to help you connect with:
-Mining operators and site managers
-Fleet and transport managers
-Safety and compliance officers
-Perfect if you offer services like compliance, fleet performance, or site support.
-Let me know if you'd like a sample.
+We offer **targeted email lists** to help you connect with:
+- Mining operators and site managers
+- Fleet and transport managers
+- Safety and compliance officers
+Perfect if you offer services like **compliance, fleet performance, or site support**.
+✅ Let me know if you'd like a **sample**.
 
 Website: {url}
 
@@ -79,7 +87,6 @@ Scraped Content:
         if "choices" not in response:
             return f"❌ Groq API Unexpected Response: {json.dumps(response, indent=2)}"
 
-        # Extract content
         content = response["choices"][0]["message"]["content"]
         return content
 
@@ -87,9 +94,6 @@ Scraped Content:
         return f"⚠️ API Error: {e}"
 
 def parse_analysis(content):
-    """
-    Extracts structured sections from AI output for CSV columns.
-    """
     company_summary = ""
     ideal_targets = ""
     outreach_angles = ""
@@ -158,7 +162,7 @@ def analyze_single_url():
 
             st.subheader("📧 Ready-to-send Email")
             st.markdown(f"**Email Subject:** {subject}")
-            st.markdown(f"**Email Body:**\n```\n{body}\n```")
+            st.markdown(f"**Email Body:**\n{body}")
 
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
