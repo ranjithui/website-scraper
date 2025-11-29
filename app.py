@@ -10,7 +10,7 @@ st.set_page_config(page_title="Website Outreach Agent", layout="wide")
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
-MODEL_NAME = "llama3-8b-8192"
+MODEL_NAME = "llama-3.3-70b-versatile"
 
 def scrape_website(url):
     try:
