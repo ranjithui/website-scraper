@@ -28,47 +28,65 @@ def scrape_website(url):
 # -------------------------
 # Call Groq AI API
 # -------------------------
-def groq_ai_analyze(url, text):
+def groq_ai_analyze(url, text, style):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    prompt = f"""
+    if style == "Professional":
+        prompt = f"""
 You are a B2B sales outreach AI Agent.
 
-Task: Analyze the company using the URL and scraped content below, and generate a **ready-to-copy professional analysis and two cold email versions**.
+Task: Analyze the company using the URL and scraped content below, and generate a **ready-to-send professional cold email** to sell our targeted B2B email lists.
+
+Requirements for the email:
+
+1. Email Subject: short, catchy, relevant.
+2. Email Body:
+   - Proper spacing between paragraphs
+   - Include bullets for target audience
+   - Highlight key phrases (like "**targeted email lists**", "**sample list**") in bold
+   - Include ✅ emoji for call-to-action
+   - 4–6 lines, copy-paste ready
+
+Provide output in this structure:
+
+1️⃣ Company Summary (2 lines)
+2️⃣ Ideal Target Audience (3 bullet points)
+3️⃣ Best Outreach Angles (2 bullet points)
+4️⃣ Cold Email (ready-to-send, properly formatted):
+
+📧 Email Subject:  
+📨 Email Body:
+
+Website: {url}
+
+Scraped Content:  
+{text}
+"""
+    else:  # Humble & Conversational Style
+        prompt = f"""
+You are a B2B sales outreach AI Agent.
+
+Task: Analyze the company using the URL and scraped content below, and generate a **humble, conversational cold email** in ready-to-copy format.
 
 Requirements:
 
-1️⃣ Company Summary (2–3 lines)  
-2️⃣ Industry/Field  
-3️⃣ Ideal Target Audience (3 bullet points)  
-4️⃣ Best Outreach Angles (2 bullet points)  
+1. Start with a friendly greeting in a humble tone
+2. Include brief company info (2–3 lines)
+3. Mention industry/field
+4. Include target customers relevant to the company in bullets
+5. Highlight key phrases (like "**targeted B2B email lists**", "**sample list**") in bold
+6. Include ✅ emoji for the call-to-action
+7. Proper spacing between paragraphs
+8. 4–6 lines in the email body
+9. End with a polite, engaging line (like "Looking forward to your thoughts!")
 
-5️⃣ Cold Emails
-   - Professional Email (copy-paste-ready, bullets, highlights, emoji ✅, 4–6 lines)  
-   - Humble & Conversational Email (friendly tone, company info, industry, bullets, highlights, emoji ✅, 4–6 lines)
+Provide output in this structure:
 
-Format exactly like this:
-
-1️⃣ Company Summary:  
-2️⃣ Industry/Field:  
-3️⃣ Ideal Target Audience:  
-- Bullet 1  
-- Bullet 2  
-- Bullet 3  
-
-4️⃣ Best Outreach Angles:  
-- Bullet 1  
-- Bullet 2  
-
-5️⃣ Cold Emails:  
-📧 Professional Email Subject:  
-📨 Professional Email Body:  
-
-📧 Humble & Conversational Email Subject:  
-📨 Humble & Conversational Email Body:  
+📧 Email Subject:  
+📨 Email Body:
 
 Website: {url}
 
@@ -99,103 +117,52 @@ Scraped Content:
 # Parse AI output
 # -------------------------
 def parse_analysis(content):
-    # Initialize
-    company_summary = ""
-    industry = ""
-    ideal_targets = ""
-    outreach_angles = ""
-    prof_subject = ""
-    prof_body = ""
-    humble_subject = ""
-    humble_body = ""
-
+    email_subject = ""
+    email_body = ""
     try:
         lines = content.splitlines()
-        mode = None
         buffer = []
-
+        mode = None
         for line in lines:
             line_strip = line.strip()
-            if "1️⃣ Company Summary:" in line_strip:
-                if buffer and mode == "company_summary":
-                    company_summary = " ".join(buffer)
-                    buffer = []
-                mode = "company_summary"
-            elif "2️⃣ Industry/Field:" in line_strip:
-                if buffer and mode == "company_summary":
-                    company_summary = " ".join(buffer)
-                    buffer = []
-                mode = "industry"
-            elif "3️⃣ Ideal Target Audience:" in line_strip:
-                if buffer and mode == "industry":
-                    industry = " ".join(buffer)
-                    buffer = []
-                mode = "ideal_targets"
-            elif "4️⃣ Best Outreach Angles:" in line_strip:
-                if buffer and mode == "ideal_targets":
-                    ideal_targets = "\n".join(buffer)
-                    buffer = []
-                mode = "outreach_angles"
-            elif "5️⃣ Cold Emails:" in line_strip:
-                if buffer and mode == "outreach_angles":
-                    outreach_angles = "\n".join(buffer)
-                    buffer = []
-                mode = "emails"
-            elif "📧 Professional Email Subject:" in line_strip:
-                prof_subject = line_strip.replace("📧 Professional Email Subject:", "").strip()
-                mode = "prof_body"
+            if "📧 Email Subject:" in line_strip:
+                email_subject = line_strip.replace("📧 Email Subject:", "").strip()
+                mode = "email_body"
                 buffer = []
-            elif "📨 Professional Email Body:" in line_strip:
-                mode = "prof_body_collect"
+            elif "📨 Email Body:" in line_strip:
+                mode = "email_body"
                 buffer = []
-            elif "📧 Humble & Conversational Email Subject:" in line_strip:
-                if buffer and mode == "prof_body_collect":
-                    prof_body = "\n".join(buffer)
-                    buffer = []
-                humble_subject = line_strip.replace("📧 Humble & Conversational Email Subject:", "").strip()
-                mode = "humble_body"
-            elif "📨 Humble & Conversational Email Body:" in line_strip:
-                mode = "humble_body_collect"
-                buffer = []
-            else:
-                if mode in ["company_summary", "industry", "ideal_targets", "outreach_angles", "prof_body_collect", "humble_body_collect"]:
-                    buffer.append(line_strip)
-
-        # Capture remaining buffers
-        if buffer and mode == "humble_body_collect":
-            humble_body = "\n".join(buffer)
-
+            elif mode == "email_body":
+                buffer.append(line_strip)
+        email_body = "\n".join(buffer)
     except Exception as e:
         st.warning(f"Parsing error: {e}")
-
-    return company_summary, industry, ideal_targets, outreach_angles, prof_subject, prof_body, humble_subject, humble_body
+    return email_subject, email_body
 
 # -------------------------
-# Single URL Analysis
+# Display both email versions
 # -------------------------
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
     if st.button("Analyze"):
         if url:
-            st.subheader("📌 Generating Analysis & Emails...")
             text = scrape_website(url)
-            content = groq_ai_analyze(url, text)
 
-            company_summary, industry, ideal_targets, outreach_angles, prof_subject, prof_body, humble_subject, humble_body = parse_analysis(content)
+            st.subheader("📌 Generating Emails... Please wait.")
 
-            # Display Company Analysis
-            st.subheader("🏢 Company Analysis")
-            st.markdown(f"**Company Summary:** {company_summary}")
-            st.markdown(f"**Industry/Field:** {industry}")
-            st.markdown(f"**Ideal Target Audience:**\n{ideal_targets}")
-            st.markdown(f"**Best Outreach Angles:**\n{outreach_angles}")
+            # Professional Email
+            content_prof = groq_ai_analyze(url, text, "Professional")
+            subject_prof, body_prof = parse_analysis(content_prof)
 
-            # Display Emails fully expanded
-            st.subheader("✉️ Professional Email")
-            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{prof_subject}\n\n📨 Email Body:\n{prof_body}", height=max(300, len(prof_body.splitlines())*25))
+            # Humble & Conversational Email
+            content_humble = groq_ai_analyze(url, text, "Humble & Conversational")
+            subject_humble, body_humble = parse_analysis(content_humble)
 
-            st.subheader("✉️ Humble & Conversational Email")
-            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{humble_subject}\n\n📨 Email Body:\n{humble_body}", height=max(300, len(humble_body.splitlines())*25))
+            st.subheader("1️⃣ Professional Email")
+            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{subject_prof}\n\n📨 Email Body:\n{body_prof}", height=250)
+
+            st.subheader("2️⃣ Humble & Conversational Email")
+            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{subject_humble}\n\n📨 Email Body:\n{body_humble}", height=250)
 
 # -------------------------
 # Bulk CSV Analysis
@@ -215,20 +182,21 @@ def analyze_bulk():
             for i, row in df.iterrows():
                 url = row["url"]
                 text = scrape_website(url)
-                content = groq_ai_analyze(url, text)
 
-                company_summary, industry, ideal_targets, outreach_angles, prof_subject, prof_body, humble_subject, humble_body = parse_analysis(content)
+                # Professional Email
+                content_prof = groq_ai_analyze(url, text, "Professional")
+                subject_prof, body_prof = parse_analysis(content_prof)
+
+                # Humble & Conversational Email
+                content_humble = groq_ai_analyze(url, text, "Humble & Conversational")
+                subject_humble, body_humble = parse_analysis(content_humble)
 
                 results.append({
                     "url": url,
-                    "company_summary": company_summary,
-                    "industry": industry,
-                    "ideal_targets": ideal_targets,
-                    "outreach_angles": outreach_angles,
-                    "professional_subject": prof_subject,
-                    "professional_body": prof_body,
-                    "humble_subject": humble_subject,
-                    "humble_body": humble_body
+                    "professional_subject": subject_prof,
+                    "professional_body": body_prof,
+                    "humble_subject": subject_humble,
+                    "humble_body": body_humble
                 })
 
                 progress.progress((i + 1) / len(df))
@@ -243,7 +211,7 @@ def analyze_bulk():
 # -------------------------
 # UI Layout
 # -------------------------
-st.title("🌐 Website Outreach AI Agent (Groq) – Company Analysis + Cold Emails")
+st.title("🌐 Website Outreach AI Agent (Groq)")
 
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
 
