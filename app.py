@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import json
 
-st.set_page_config(page_title="Website Outreach Agent", layout="wide")
+st.set_page_config(page_title="Website Outreach AI Agent", layout="wide")
 
 # Load API key from Streamlit secrets
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -18,7 +18,8 @@ def scrape_website(url):
         soup = BeautifulSoup(r.text, "html.parser")
         texts = soup.get_text(separator=" ", strip=True)
         return texts[:4000]  # limit tokens
-    except:
+    except Exception as e:
+        st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
 def groq_ai_analyze(url, text):
@@ -28,23 +29,25 @@ def groq_ai_analyze(url, text):
     }
 
     prompt = f"""
-You are a B2B sales outreach AI Agent.
+You are a B2B sales outreach AI Agent. 
 
-Analyze the company using the URL and scraped content below.
+Your task: Analyze the company using the URL and scraped content below, and generate a **ready-to-send cold email pitch** to attract the company to buy targeted email lists from us. 
+
+Include the **specific target audience** they likely need to reach, so they are motivated to take action. 
 
 Provide results in this exact structure:
 
 1️⃣ Company Summary (2 lines)
 
-2️⃣ Ideal Target Audience (3 bullet points)
+2️⃣ Ideal Target Audience (3 bullet points) – mention their customers/clients
 
 3️⃣ Best Outreach Angles (2 bullet points)
 
-4️⃣ Email in proper format:
+4️⃣ Cold Email in proper format:
 - 📧 Email Subject: short, catchy subject line
-- 📨 Email Body: cold email pitch (4-6 lines, ready-to-send)
+- 📨 Email Body: cold email pitch (4-6 lines), highlighting our email lists and their target audience
 
-Format example:
+**Format Example:**
 📧 Email Subject: Connect with Key Site Managers
 📨 Email Body:
 Hello,
@@ -87,7 +90,6 @@ def parse_analysis(content):
     """
     Extracts structured sections from AI output for CSV columns.
     """
-    # Initialize defaults
     company_summary = ""
     ideal_targets = ""
     outreach_angles = ""
@@ -124,10 +126,8 @@ def parse_analysis(content):
                     buffer = []
                 mode = "outreach_angles"
             elif "📧 Email Subject:" in line_strip:
-                if buffer and mode:
-                    if mode == "outreach_angles":
-                        outreach_angles = "\n".join(buffer)
-                    buffer = []
+                if buffer and mode == "outreach_angles":
+                    outreach_angles = "\n".join(buffer)
                 mode = "email"
                 email_subject = line_strip.replace("📧 Email Subject:", "").strip()
             elif "📨 Email Body:" in line_strip:
@@ -140,8 +140,8 @@ def parse_analysis(content):
         if buffer and mode == "email_body":
             email_body = "\n".join(buffer)
 
-    except:
-        pass
+    except Exception as e:
+        st.warning(f"Parsing error: {e}")
 
     return company_summary, ideal_targets, outreach_angles, email_subject, email_body
 
@@ -154,7 +154,6 @@ def analyze_single_url():
             st.subheader("Analysis Result")
             st.text_area("Raw AI Output", content, height=400)
 
-            # Parse structured fields
             summary, targets, angles, subject, body = parse_analysis(content)
 
             st.subheader("📧 Ready-to-send Email")
