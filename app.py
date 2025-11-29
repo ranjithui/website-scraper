@@ -40,10 +40,13 @@ Provide results in this exact structure:
 
 3️⃣ Best Outreach Angles (2 bullet points)
 
-4️⃣ Email Subject Line (short, 1 line)
+4️⃣ Email in proper format:
+- 📧 Email Subject: short, catchy subject line
+- 📨 Email Body: cold email pitch (4-6 lines, ready-to-send)
 
-5️⃣ Cold Email Pitch (4-6 lines)
 Format example:
+📧 Email Subject: Connect with Key Site Managers
+📨 Email Body:
 Hello,
 We offer targeted email lists to help you connect with:
 Mining operators and site managers
@@ -73,19 +76,90 @@ Scraped Content:
         if "choices" not in response:
             return f"❌ Groq API Unexpected Response: {json.dumps(response, indent=2)}"
 
-        return response["choices"][0]["message"]["content"]
+        # Extract content
+        content = response["choices"][0]["message"]["content"]
+        return content
 
     except Exception as e:
         return f"⚠️ API Error: {e}"
+
+def parse_analysis(content):
+    """
+    Extracts structured sections from AI output for CSV columns.
+    """
+    # Initialize defaults
+    company_summary = ""
+    ideal_targets = ""
+    outreach_angles = ""
+    email_subject = ""
+    email_body = ""
+
+    try:
+        lines = content.splitlines()
+        mode = None
+        buffer = []
+
+        for line in lines:
+            line_strip = line.strip()
+            if "1️⃣" in line_strip:
+                if buffer and mode:
+                    if mode == "company_summary":
+                        company_summary = " ".join(buffer)
+                    buffer = []
+                mode = "company_summary"
+            elif "2️⃣" in line_strip:
+                if buffer and mode:
+                    if mode == "company_summary":
+                        company_summary = " ".join(buffer)
+                    elif mode == "ideal_targets":
+                        ideal_targets = "\n".join(buffer)
+                    buffer = []
+                mode = "ideal_targets"
+            elif "3️⃣" in line_strip:
+                if buffer and mode:
+                    if mode == "ideal_targets":
+                        ideal_targets = "\n".join(buffer)
+                    elif mode == "outreach_angles":
+                        outreach_angles = "\n".join(buffer)
+                    buffer = []
+                mode = "outreach_angles"
+            elif "📧 Email Subject:" in line_strip:
+                if buffer and mode:
+                    if mode == "outreach_angles":
+                        outreach_angles = "\n".join(buffer)
+                    buffer = []
+                mode = "email"
+                email_subject = line_strip.replace("📧 Email Subject:", "").strip()
+            elif "📨 Email Body:" in line_strip:
+                mode = "email_body"
+                buffer = []
+            else:
+                if mode in ["company_summary", "ideal_targets", "outreach_angles", "email_body"]:
+                    buffer.append(line_strip)
+
+        if buffer and mode == "email_body":
+            email_body = "\n".join(buffer)
+
+    except:
+        pass
+
+    return company_summary, ideal_targets, outreach_angles, email_subject, email_body
 
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
     if st.button("Analyze"):
         if url:
             text = scrape_website(url)
-            result = groq_ai_analyze(url, text)
+            content = groq_ai_analyze(url, text)
             st.subheader("Analysis Result")
-            st.write(result)
+            st.text_area("Raw AI Output", content, height=400)
+
+            # Parse structured fields
+            summary, targets, angles, subject, body = parse_analysis(content)
+
+            st.subheader("📧 Ready-to-send Email")
+            st.markdown(f"**Email Subject:** {subject}")
+            st.markdown(f"**Email Body:**\n```\n{body}\n```")
 
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
@@ -104,9 +178,16 @@ def analyze_bulk():
             for i, row in df.iterrows():
                 url = row["url"]
                 text = scrape_website(url)
-                result = groq_ai_analyze(url, text)
-                results.append({"url": url, "analysis": result})
-
+                content = groq_ai_analyze(url, text)
+                summary, targets, angles, subject, body = parse_analysis(content)
+                results.append({
+                    "url": url,
+                    "company_summary": summary,
+                    "ideal_targets": targets,
+                    "outreach_angles": angles,
+                    "email_subject": subject,
+                    "cold_email_body": body
+                })
                 progress.progress((i + 1) / len(df))
 
             result_df = pd.DataFrame(results)
