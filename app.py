@@ -12,6 +12,9 @@ GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
 
+# -------------------------
+# Scrape website content
+# -------------------------
 def scrape_website(url):
     try:
         r = requests.get(url, timeout=10)
@@ -22,6 +25,9 @@ def scrape_website(url):
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
+# -------------------------
+# Call Groq AI API
+# -------------------------
 def groq_ai_analyze(url, text):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -31,19 +37,19 @@ def groq_ai_analyze(url, text):
     prompt = f"""
 You are a B2B sales outreach AI Agent.
 
-Your task: Analyze the company using the URL and scraped content below, and generate a **professional cold email** to attract the company to buy our targeted B2B email lists.
+Task: Analyze the company from the URL and scraped content below and generate a **ready-to-send professional cold email** to sell our targeted B2B email lists.
 
-Requirements for the email:
+Requirements:
 
-1. Email Subject: short, catchy, relevant to the company.
+1. Email Subject: short, catchy, relevant.
 2. Email Body:
-   - Use a **friendly professional tone**.
-   - Include bullets for **target audience**.
-   - Highlight important phrases (like "targeted email lists", "sample list") using bold or emoji ✅ where appropriate.
-   - 4-6 lines, ready-to-send.
-3. Include a clear call-to-action at the end.
+   - Use proper spacing between paragraphs.
+   - Include bullets for target audience.
+   - Highlight key phrases (like "**targeted email lists**", "**sample list**") using bold.
+   - Include ✅ emoji for call-to-action.
+   - 4-6 lines, copy-paste ready.
 
-Provide results in this exact structure:
+Provide output in this exact structure:
 
 1️⃣ Company Summary (2 lines)
 
@@ -51,24 +57,30 @@ Provide results in this exact structure:
 
 3️⃣ Best Outreach Angles (2 bullet points)
 
-4️⃣ Cold Email in proper format:
-- 📧 Email Subject:
-- 📨 Email Body:
+4️⃣ Cold Email (ready-to-send, properly formatted):
+
+📧 Email Subject:  
+📨 Email Body:
 
 **Format Example:**
+
 📧 Email Subject: Connect with Key Site Managers
+
 📨 Email Body:
 Hello,
-We offer **targeted email lists** to help you connect with:
-- Mining operators and site managers
-- Fleet and transport managers
-- Safety and compliance officers
-Perfect if you offer services like **compliance, fleet performance, or site support**.
+
+We offer **targeted email lists** to help you connect with:  
+- Mining operators and site managers  
+- Fleet and transport managers  
+- Safety and compliance officers  
+
+Perfect if you offer services like **compliance, fleet performance, or site support**.  
+
 ✅ Let me know if you'd like a **sample**.
 
 Website: {url}
 
-Scraped Content:
+Scraped Content:  
 {text}
 """
 
@@ -93,6 +105,9 @@ Scraped Content:
     except Exception as e:
         return f"⚠️ API Error: {e}"
 
+# -------------------------
+# Parse AI output
+# -------------------------
 def parse_analysis(content):
     company_summary = ""
     ideal_targets = ""
@@ -149,6 +164,9 @@ def parse_analysis(content):
 
     return company_summary, ideal_targets, outreach_angles, email_subject, email_body
 
+# -------------------------
+# Single URL analysis
+# -------------------------
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
     if st.button("Analyze"):
@@ -161,9 +179,11 @@ def analyze_single_url():
             summary, targets, angles, subject, body = parse_analysis(content)
 
             st.subheader("📧 Ready-to-send Email")
-            st.markdown(f"**Email Subject:** {subject}")
-            st.markdown(f"**Email Body:**\n{body}")
+            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{subject}\n\n📨 Email Body:\n{body}", height=250)
 
+# -------------------------
+# Bulk CSV analysis
+# -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
 
@@ -200,7 +220,9 @@ def analyze_bulk():
             csv = result_df.to_csv(index=False).encode('utf-8')
             st.download_button("Download Results CSV", csv, "results.csv", "text/csv")
 
+# -------------------------
 # UI Layout
+# -------------------------
 st.title("🌐 Website Outreach AI Agent (Groq)")
 
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
