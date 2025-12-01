@@ -49,12 +49,6 @@ def groq_ai_analyze(url, text, style):
         "Content-Type": "application/json"
     }
 
-    email_tone = (
-        "Strong and professional with clear CTA to offer targeted B2B email lists."
-        if style == "Professional"
-        else "Friendly, humble tone with CTA offering a sample targeted B2B email list."
-    )
-
     prompt = f"""
 You are a B2B sales outreach AI Agent.
 Analyze the company using the URL and scraped content below.
@@ -71,9 +65,34 @@ Your response MUST begin with ONLY the following JSON structure (no extra words)
 After that JSON block, generate:
 
 Subject Line:
+- Clear, specific, value-driven (no emojis)
+
 Email Body:
-- {email_tone}
-- 6–9 sentences
+- Tone: {style}
+- Follow exactly this format
+- Personalization generic: '[First Name]'
+- Use relevant ICP insights based on analysis
+
+FORMAT (MUST FOLLOW EXACTLY):
+
+Hi [First Name],
+
+Are you looking for an updated and verified list of leads in the {{industry}} industry?
+
+Our database includes:
+- {{ICP1}}
+- {{ICP2}}
+- {{ICP3}}
+- {{ICP4}}
+- {{ICP5}}
+
+Each contact includes name, title, email, phone, and company/need insights — helping you connect directly with the right decision makers.
+
+I’d be happy to share additional details and a few sample records tailored for your review.
+
+Would you like me to send them over?
+
+Best regards,
 
 Website: {url}
 
@@ -101,34 +120,30 @@ Scraped Content:
 
 
 # -------------------------
-# Extract Email Subject + Body
+# Parse Email
 # -------------------------
 def parse_email(content):
     subject = ""
-    body = ""
-    lines = content.splitlines()
+    body_lines = []
     collecting_body = False
 
-    for line in lines:
-        # Extract subject
+    for line in content.splitlines():
         if "Subject" in line:
             subject = (
                 line.replace("Subject Line:", "")
                 .replace("📧", "")
                 .strip()
             )
+            continue
 
-        # Start collecting body
-        if "Email Body:" in line or "📝" in line:
+        if "Email Body" in line:
             collecting_body = True
             continue
 
         if collecting_body:
-            body += line + "\n"
+            body_lines.append(line)
 
-    subject = subject.strip()
-    body = body.strip()
-
+    body = "\n".join(body_lines).strip()
     return subject, body
 
 
@@ -144,11 +159,9 @@ def analyze_single_url():
 
             st.subheader("⏳ AI Processing... Please wait")
 
-            # Both Styles
             prof = groq_ai_analyze(url, scraped, "Professional")
             conv = groq_ai_analyze(url, scraped, "Conversational")
 
-            # Extract JSON insights
             insights_json = extract_json(prof)
 
             if insights_json:
@@ -161,17 +174,16 @@ def analyze_single_url():
             else:
                 insights_display = "⚠️ Insights unavailable — Try again"
 
-            # Parse Emails
             sp, bp = parse_email(prof)
             sh, bh = parse_email(conv)
 
             st.subheader("🏢 Company Insights")
             st.text_area("Insights", insights_display, height=300)
 
-            st.subheader("1️⃣ Professional Email (Copy & Paste Ready)")
+            st.subheader("1️⃣ Professional Email — Copy & Paste Ready")
             st.text_area("Professional Email", f"Subject: {sp}\n\n{bp}", height=650)
 
-            st.subheader("2️⃣ Conversational Email (Copy & Paste Ready)")
+            st.subheader("2️⃣ Conversational Email — Copy & Paste Ready")
             st.text_area("Conversational Email", f"Subject: {sh}\n\n{bh}", height=650)
 
 
@@ -225,7 +237,7 @@ def analyze_bulk():
 
 
 # -------------------------
-# Layout
+# UI Layout
 # -------------------------
 st.title("🌐 Website Outreach AI Agent (Groq)")
 
