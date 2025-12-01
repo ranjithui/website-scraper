@@ -68,12 +68,8 @@ Subject Line:
 - Clear, specific, value-driven (no emojis)
 
 Email Body:
-- Tone: {style}
-- Follow exactly this format
-- Personalization generic: '[First Name]'
-- Use relevant ICP insights based on analysis
-
-FORMAT (MUST FOLLOW EXACTLY):
+(Tone: {style})
+(Use this format EXACTLY — no additional text before or after)
 
 Hi [First Name],
 
@@ -124,26 +120,25 @@ Scraped Content:
 # -------------------------
 def parse_email(content):
     subject = ""
-    body_lines = []
-    collecting_body = False
+    body = ""
 
-    for line in content.splitlines():
-        if "Subject" in line:
-            subject = (
-                line.replace("Subject Line:", "")
-                .replace("📧", "")
-                .strip()
-            )
+    lines = content.splitlines()
+    found_subject = False
+
+    for i, line in enumerate(lines):
+        if line.strip().lower().startswith("subject"):
+            subject = line.split(":", 1)[-1].strip()
+            found_subject = True
             continue
 
-        if "Email Body" in line:
-            collecting_body = True
-            continue
+        if found_subject:
+            # Skip empty lines
+            if line.strip() == "":
+                continue
+            # Capture rest of content as body
+            body = "\n".join(lines[i:]).strip()
+            break
 
-        if collecting_body:
-            body_lines.append(line)
-
-    body = "\n".join(body_lines).strip()
     return subject, body
 
 
