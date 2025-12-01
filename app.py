@@ -38,59 +38,58 @@ def groq_ai_analyze(url, text, style):
         prompt = f"""
 You are a B2B sales outreach AI Agent.
 
-Task: Analyze the company using the URL and scraped content below, and generate a **ready-to-send professional cold email** to sell our targeted B2B email lists.
+Task: Analyze the company using the URL and scraped content below.
 
-Requirements for the email:
+Deliver 3 structured outputs:
 
-1. Email Subject: short, catchy, relevant.
-2. Email Body:
-   - Proper spacing between paragraphs
-   - Include bullets for target audience
-   - Highlight key phrases (like "**targeted email lists**", "**sample list**") in bold
-   - Include ✅ emoji for call-to-action
-   - 4–6 lines, copy-paste ready
+1️⃣ Company Insights
+- 2–3 line overview of what the company does
+- 3 bullet points listing their main services/products
+- 3 bullet points listing the Ideal Customer Profile (ICP)
 
-Provide output in this structure:
+2️⃣ Best Outreach Angles
+- 2–3 bullets explaining how **targeted B2B email lists** can help them
 
-1️⃣ Company Summary (2 lines)
-2️⃣ Ideal Target Audience (3 bullet points)
-3️⃣ Best Outreach Angles (2 bullet points)
-4️⃣ Cold Email (ready-to-send, properly formatted):
-
-📧 Email Subject:  
-📨 Email Body:
+3️⃣ Cold Email (Professional Format)
+Format:
+📧 Subject Line:
+📝 Email Body:
+- Well formatted with bullet points and bold key value propositions
+- Add a single clear CTA with a **sample email list offer**
+- Maintain 6–9 concise sentences
 
 Website: {url}
 
-Scraped Content:  
+Scraped Content:
 {text}
 """
-    else:  # Humble & Conversational Style
+    else:
         prompt = f"""
 You are a B2B sales outreach AI Agent.
 
-Task: Analyze the company using the URL and scraped content below, and generate a **humble, conversational cold email** in ready-to-copy format.
+Task: Analyze the company using the URL and scraped content below.
 
-Requirements:
+Deliver 3 structured outputs:
 
-1. Start with a friendly greeting in a humble tone
-2. Include brief company info (2–3 lines)
-3. Mention industry/field
-4. Include target customers relevant to the company in bullets
-5. Highlight key phrases (like "**targeted B2B email lists**", "**sample list**") in bold
-6. Include ✅ emoji for the call-to-action
-7. Proper spacing between paragraphs
-8. 4–6 lines in the email body
-9. End with a polite, engaging line (like "Looking forward to your thoughts!")
+1️⃣ Company Insights
+- 2–3 line overview of what the company does
+- 3 bullet points listing their main services/products
+- 3 bullet points listing the Ideal Customer Profile (ICP)
 
-Provide output in this structure:
+2️⃣ Best Outreach Angles
+- 2–3 bullets, friendly tone
 
-📧 Email Subject:  
-📨 Email Body:
+3️⃣ Cold Email (Conversational Style)
+Format:
+📧 Subject Line:
+📝 Email Body:
+- Polite, human tone
+- Include **targeted B2B email lists**
+- Clear CTA offering a **sample list**
 
 Website: {url}
 
-Scraped Content:  
+Scraped Content:
 {text}
 """
 
@@ -107,14 +106,13 @@ Scraped Content:
         if "choices" not in response:
             return f"❌ Groq API Unexpected Response: {json.dumps(response, indent=2)}"
 
-        content = response["choices"][0]["message"]["content"]
-        return content
+        return response["choices"][0]["message"]["content"]
 
     except Exception as e:
         return f"⚠️ API Error: {e}"
 
 # -------------------------
-# Parse AI output
+# Parse Email (Subject + Body)
 # -------------------------
 def parse_analysis(content):
     email_subject = ""
@@ -125,22 +123,33 @@ def parse_analysis(content):
         mode = None
         for line in lines:
             line_strip = line.strip()
-            if "📧 Email Subject:" in line_strip:
-                email_subject = line_strip.replace("📧 Email Subject:", "").strip()
+            if "📧" in line_strip:
+                email_subject = line_strip.replace("📧 Subject Line:", "").replace("📧 Email Subject:", "").strip()
                 mode = "email_body"
                 buffer = []
-            elif "📨 Email Body:" in line_strip:
+            elif "📝 Email Body" in line_strip or "📨 Email Body" in line_strip:
                 mode = "email_body"
                 buffer = []
             elif mode == "email_body":
                 buffer.append(line_strip)
         email_body = "\n".join(buffer)
-    except Exception as e:
-        st.warning(f"Parsing error: {e}")
+    except:
+        pass
     return email_subject, email_body
 
 # -------------------------
-# Display both email versions
+# Parse Insights Section
+# -------------------------
+def parse_insights(content):
+    try:
+        part = content.split("1️⃣ Company Insights")[1]
+        insights = part.split("2️⃣")[0].strip()
+        return insights
+    except:
+        return "Insights not detected"
+
+# -------------------------
+# Single URL Analysis
 # -------------------------
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
@@ -148,21 +157,34 @@ def analyze_single_url():
         if url:
             text = scrape_website(url)
 
-            st.subheader("📌 Generating Emails... Please wait.")
+            st.subheader("📌 Generating Results... Please wait ⏳")
 
-            # Professional Email
+            # AI Calls
             content_prof = groq_ai_analyze(url, text, "Professional")
-            subject_prof, body_prof = parse_analysis(content_prof)
-
-            # Humble & Conversational Email
             content_humble = groq_ai_analyze(url, text, "Humble & Conversational")
+
+            # Parse
+            insights_prof = parse_insights(content_prof)
+
+            subject_prof, body_prof = parse_analysis(content_prof)
             subject_humble, body_humble = parse_analysis(content_humble)
 
+            st.subheader("🏢 Company Insights")
+            st.text_area("Insights", insights_prof, height=250)
+
             st.subheader("1️⃣ Professional Email")
-            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{subject_prof}\n\n📨 Email Body:\n{body_prof}", height=250)
+            st.text_area(
+                "Professional Cold Email",
+                f"📧 Email Subject: {subject_prof}\n\n📝 Email Body:\n{body_prof}",
+                height=650
+            )
 
             st.subheader("2️⃣ Humble & Conversational Email")
-            st.text_area("Copy & Paste Ready Email", f"📧 Email Subject:\n{subject_humble}\n\n📨 Email Body:\n{body_humble}", height=250)
+            st.text_area(
+                "Conversational Cold Email",
+                f"📧 Email Subject: {subject_humble}\n\n📝 Email Body:\n{body_humble}",
+                height=650
+            )
 
 # -------------------------
 # Bulk CSV Analysis
@@ -183,12 +205,10 @@ def analyze_bulk():
                 url = row["url"]
                 text = scrape_website(url)
 
-                # Professional Email
                 content_prof = groq_ai_analyze(url, text, "Professional")
-                subject_prof, body_prof = parse_analysis(content_prof)
-
-                # Humble & Conversational Email
                 content_humble = groq_ai_analyze(url, text, "Humble & Conversational")
+
+                subject_prof, body_prof = parse_analysis(content_prof)
                 subject_humble, body_humble = parse_analysis(content_humble)
 
                 results.append({
