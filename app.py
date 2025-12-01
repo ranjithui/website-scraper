@@ -43,7 +43,7 @@ def extract_json(content):
 # -------------------------
 # Groq AI API Call
 # -------------------------
-def groq_ai_analyze(url, text, style):
+def groq_ai_analyze(url, text, style, company_summary):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -69,11 +69,14 @@ Subject Line:
 
 Email Body:
 (Tone: {style})
-(Use this format EXACTLY — no additional text before or after)
+(Use this format EXACTLY — no extra text before or after)
 
 Hi [First Name],
 
 Are you looking for an updated and verified list of leads in the {{industry}} industry?
+
+Here’s a quick insight about your company:
+"{company_summary}"
 
 Our database includes:
 - {{ICP1}}
@@ -132,10 +135,8 @@ def parse_email(content):
             continue
 
         if found_subject:
-            # Skip empty lines
             if line.strip() == "":
                 continue
-            # Capture rest of content as body
             body = "\n".join(lines[i:]).strip()
             break
 
@@ -154,10 +155,14 @@ def analyze_single_url():
 
             st.subheader("⏳ AI Processing... Please wait")
 
-            prof = groq_ai_analyze(url, scraped, "Professional")
-            conv = groq_ai_analyze(url, scraped, "Conversational")
+            # First, get JSON insights using a minimal prompt
+            prof_temp = groq_ai_analyze(url, scraped, "Professional", "Analyzing company...")
+            insights_json = extract_json(prof_temp)
+            company_summary = insights_json['company_summary'] if insights_json else "Company is doing amazing things in its field."
 
-            insights_json = extract_json(prof)
+            # Generate emails including company insight
+            prof = groq_ai_analyze(url, scraped, "Professional", company_summary)
+            conv = groq_ai_analyze(url, scraped, "Conversational", company_summary)
 
             if insights_json:
                 insights_display = (
@@ -203,8 +208,14 @@ def analyze_bulk():
                 url = row["url"]
                 scraped = scrape_website(url)
 
-                prof = groq_ai_analyze(url, scraped, "Professional")
-                conv = groq_ai_analyze(url, scraped, "Conversational")
+                # Get JSON insights first
+                prof_temp = groq_ai_analyze(url, scraped, "Professional", "Analyzing company...")
+                insights_json = extract_json(prof_temp)
+                company_summary = insights_json['company_summary'] if insights_json else "Company is doing amazing things in its field."
+
+                # Generate emails including company insight
+                prof = groq_ai_analyze(url, scraped, "Professional", company_summary)
+                conv = groq_ai_analyze(url, scraped, "Conversational", company_summary)
 
                 sp, bp = parse_email(prof)
                 sh, bh = parse_email(conv)
