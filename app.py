@@ -12,6 +12,7 @@ GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
 
+
 # -------------------------
 # Scrape Website Content
 # -------------------------
@@ -25,6 +26,7 @@ def scrape_website(url):
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
+
 # -------------------------
 # Extract JSON Insights
 # -------------------------
@@ -37,6 +39,7 @@ def extract_json(content):
     except:
         return None
 
+
 # -------------------------
 # Groq AI API Call
 # -------------------------
@@ -47,9 +50,9 @@ def groq_ai_analyze(url, text, style):
     }
 
     email_tone = (
-        "Strong and professional with clear CTA to offer **targeted B2B email lists**."
+        "Strong and professional with clear CTA to offer targeted B2B email lists."
         if style == "Professional"
-        else "Friendly, humble tone with CTA offering a **sample targeted B2B email list**."
+        else "Friendly, humble tone with CTA offering a sample targeted B2B email list."
     )
 
     prompt = f"""
@@ -67,11 +70,10 @@ Your response MUST begin with ONLY the following JSON structure (no extra words)
 
 After that JSON block, generate:
 
-📧 Subject Line:
-📝 Email Body:
+Subject Line:
+Email Body:
 - {email_tone}
 - 6–9 sentences
-- Include emojis when helpful (subtle)
 
 Website: {url}
 
@@ -97,6 +99,7 @@ Scraped Content:
     except Exception as e:
         return f"⚠️ API Error: {e}"
 
+
 # -------------------------
 # Extract Email Subject + Body
 # -------------------------
@@ -104,27 +107,37 @@ def parse_email(content):
     subject = ""
     body = ""
     lines = content.splitlines()
-    collect = False
-    buff = []
+    collecting_body = False
 
     for line in lines:
-        if "📧" in line:
-            subject = line.replace("📧 Subject Line:", "").replace("📧 Email Subject:", "").strip()
-        if "📝" in line:
-            collect = True
-            continue
-        if collect:
-            buff.append(line)
+        # Extract subject
+        if "Subject" in line:
+            subject = (
+                line.replace("Subject Line:", "")
+                .replace("📧", "")
+                .strip()
+            )
 
-    body = "\n".join(buff).strip()
+        # Start collecting body
+        if "Email Body:" in line or "📝" in line:
+            collecting_body = True
+            continue
+
+        if collecting_body:
+            body += line + "\n"
+
+    subject = subject.strip()
+    body = body.strip()
+
     return subject, body
+
 
 # -------------------------
 # Single URL Mode
 # -------------------------
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
-    
+
     if st.button("Analyze"):
         if url:
             scraped = scrape_website(url)
@@ -135,7 +148,7 @@ def analyze_single_url():
             prof = groq_ai_analyze(url, scraped, "Professional")
             conv = groq_ai_analyze(url, scraped, "Conversational")
 
-            # Extract JSON insights from professional output
+            # Extract JSON insights
             insights_json = extract_json(prof)
 
             if insights_json:
@@ -155,15 +168,15 @@ def analyze_single_url():
             st.subheader("🏢 Company Insights")
             st.text_area("Insights", insights_display, height=300)
 
-            st.subheader("1️⃣ Professional Email")
-            st.text_area("Professional Email", f"📧 {sp}\n\n📝\n{bp}", height=650)
+            st.subheader("1️⃣ Professional Email (Copy & Paste Ready)")
+            st.text_area("Professional Email", f"Subject: {sp}\n\n{bp}", height=650)
 
-            st.subheader("2️⃣ Conversational Email")
-            st.text_area("Conversational Email", f"📧 {sh}\n\n📝\n{bh}", height=650)
+            st.subheader("2️⃣ Conversational Email (Copy & Paste Ready)")
+            st.text_area("Conversational Email", f"Subject: {sh}\n\n{bh}", height=650)
 
 
 # -------------------------
-# Bulk CSV Mode (unchanged)
+# Bulk CSV Mode
 # -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
@@ -209,6 +222,7 @@ def analyze_bulk():
                 "results.csv",
                 "text/csv"
             )
+
 
 # -------------------------
 # Layout
