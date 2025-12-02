@@ -43,7 +43,7 @@ def extract_json(content):
 # -------------------------
 # Groq AI Email Generator
 # -------------------------
-def groq_ai_generate(url, text, style, company_summary):
+def groq_ai_generate(url, text, tone, company_summary):
 
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -63,29 +63,53 @@ Analyze the company details below and generate:
 "industry": "best guess industry"
 }}
 
-2️⃣ Subject + Email Body
+2️⃣ Email outreach ONLY in TWO tones using EXACT format below.
 
-⚠️ Rules:
-- Tone: {style}
-- Keep email structure SAME as below
-- Replace bullets with relevant ICP roles based on industry
-- Focus on database of targeted contact lists
-- Do NOT mention scraping
-- Keep it short and similar format
+---
 
-Email Format:
-Subject: One line sales subject
+📌 Professional Corporate Tone  
+Subject: Enhance Your Outreach with Targeted Contacts at [Company Name]
 
 Hello [First Name],
 
-We offer targeted email lists to help you connect with:
-• {{ICP1}}
-• {{ICP2}}
-• {{ICP3}}
+I noticed [Company Name] is focusing on [specific product/service/market focus].  
+We provide targeted email lists to help you connect with:
+• CIOs
+• Product Managers
+• Risk Officers
 
-Perfect if you offer services like {{solutions}} in {{industry}}.
+If this aligns with your outreach strategy, I’d be happy to share more details along with a small sample for your review.
 
-Let me know if you'd like a sample.
+Looking forward to your thoughts,  
+Ranjith
+
+---
+
+📌 Friendly Conversational Tone  
+Subject: Connect with Key Decision-Makers at [Company Name]
+
+Hi [First Name],  
+
+I came across [Company Name] and noticed you’re doing exciting work in [industry/product/project focus].  
+We provide targeted email lists to help you reach:
+• Marketing Managers
+• Operations Leads
+• Tech Team Heads
+
+If you're open to it, I’d love to share more details — plus a small sample list so you can see the fit firsthand.
+
+What do you say — should we give it a quick try? 😊  
+
+Cheers,  
+Ranjith 🚀  
+
+---
+
+⚠️ Additional rules:
+- Do NOT mention scraping
+- Keep email short
+- Replace placeholders contextually based on industry
+- Keep structure same (don't add/remove sections)
 
 Company URL: {url}
 Company Summary: {company_summary}
@@ -134,22 +158,20 @@ def analyze_single_url():
             scraped = scrape_website(url)
             st.subheader("⏳ Processing... Please wait")
 
-            # Generate JSON + Insight Summary
-            base = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
-            insights = extract_json(base)
+            base_resp = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
+            insights = extract_json(base_resp)
 
             company_summary = insights["company_summary"] if insights else "A growing organization"
-            
-            # Generate 4 Tone Versions
+
             prof = groq_ai_generate(url, scraped, "Professional Corporate Tone", company_summary)
             conv = groq_ai_generate(url, scraped, "Friendly Conversational Tone", company_summary)
-            insight = groq_ai_generate(url, scraped, "Insight-Driven Consultative Tone", company_summary)
-            action = groq_ai_generate(url, scraped, "Urgency Action-Oriented Tone", company_summary)
+            consult = groq_ai_generate(url, scraped, "Insight-Driven Consultative Tone", company_summary)
+            urgent = groq_ai_generate(url, scraped, "Urgency Action-Oriented Tone", company_summary)
 
             sp, bp = parse_email(prof)
             sc, bc = parse_email(conv)
-            si_sub, si_body = parse_email(insight)
-            sa_sub, sa_body = parse_email(action)
+            si_sub, si_body = parse_email(consult)
+            sa_sub, sa_body = parse_email(urgent)
 
             st.subheader("📌 Company Insights")
             st.json(insights)
@@ -168,7 +190,7 @@ def analyze_single_url():
 
 
 # -------------------------
-# Bulk CSV Upload Mode
+# Bulk CSV Mode
 # -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
@@ -188,19 +210,19 @@ def analyze_bulk():
                 url = row["url"]
                 scraped = scrape_website(url)
 
-                base = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
-                insights = extract_json(base)
+                base_resp = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
+                insights = extract_json(base_resp)
                 company_summary = insights["company_summary"] if insights else "A growing organization"
 
                 prof = groq_ai_generate(url, scraped, "Professional Corporate Tone", company_summary)
                 conv = groq_ai_generate(url, scraped, "Friendly Conversational Tone", company_summary)
-                insight = groq_ai_generate(url, scraped, "Insight-Driven Consultative Tone", company_summary)
-                action = groq_ai_generate(url, scraped, "Urgency Action-Oriented Tone", company_summary)
+                consult = groq_ai_generate(url, scraped, "Insight-Driven Consultative Tone", company_summary)
+                urgent = groq_ai_generate(url, scraped, "Urgency Action-Oriented Tone", company_summary)
 
                 sp, bp = parse_email(prof)
                 sc, bc = parse_email(conv)
-                si_sub, si_body = parse_email(insight)
-                sa_sub, sa_body = parse_email(action)
+                si_sub, si_body = parse_email(consult)
+                sa_sub, sa_body = parse_email(urgent)
 
                 results.append({
                     "url": url,
@@ -230,7 +252,7 @@ def analyze_bulk():
 
 
 # -------------------------
-# App UI Layout
+# UI Layout
 # -------------------------
 st.title("🌐 Website Outreach AI Agent (Groq)")
 
