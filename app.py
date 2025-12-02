@@ -8,10 +8,8 @@ st.set_page_config(page_title="Website Outreach AI Agent", layout="wide")
 
 # Load API key
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
-
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
-
 
 # -------------------------
 # Scrape Website Content
@@ -26,7 +24,6 @@ def scrape_website(url):
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
-
 # -------------------------
 # Extract JSON Insights
 # -------------------------
@@ -35,16 +32,18 @@ def extract_json(content):
         start = content.find("{")
         end = content.rfind("}") + 1
         json_str = content[start:end]
-        return json.loads(json_str)
+        data = json.loads(json_str)
+        # Ensure company_name exists
+        if "company_name" not in data:
+            data["company_name"] = "This Company"
+        return data
     except:
         return None
-
 
 # -------------------------
 # Call AI for Insights Only
 # -------------------------
 def groq_ai_generate_insights(url, text):
-
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -56,6 +55,7 @@ You are a business analyst. Extract ONLY JSON insights from the website.
 Return in this exact JSON format:
 
 {{
+"company_name": "Company Name",
 "company_summary": "2-3 line summary",
 "main_products": ["service 1", "service 2", "service 3"],
 "ideal_customers": ["ICP1", "ICP2", "ICP3"],
@@ -79,28 +79,38 @@ Website Content: {text}
     except Exception as e:
         return ""
 
-
 # -------------------------
 # Call AI for Emails Only
 # -------------------------
-def groq_ai_generate_email(url, text, tone, company_summary):
-
+def groq_ai_generate_email(url, text, tone, insights):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
     }
 
-    # Professional Email prompt
-    professional_prompt = f"""
+    company_name = insights.get("company_name", "This Company")
+    company_summary = insights.get("company_summary", "A growing organization")
+    main_products = ", ".join(insights.get("main_products", []))
+    industry = insights.get("industry", "your industry")
+
+    if "professional" in tone.lower():
+        prompt = f"""
 You are a B2B sales outreach expert.
 
-Analyze the company and generate outreach email ONLY in the EXACT format below.
+Analyze the following company and generate an outreach email in EXACT format.
 
-Subject: Enhance Your Outreach with Targeted Contacts at [Company Name]
+Company Name: {company_name}
+Industry: {industry}
+Summary: {company_summary}
+Main Products/Services: {main_products}
+
+Return ONLY the email in this format:
+
+Subject: Enhance Your Outreach with Targeted Contacts at {company_name}
 
 Hello [First Name],
 
-I noticed [Company Name] is focusing on [specific product/service/market focus].  
+I noticed {company_name} is focusing on {main_products}.  
 We provide targeted email lists to help you connect with:
 • CIOs
 • Product Managers
@@ -111,18 +121,24 @@ If this aligns with your outreach strategy, I’d be happy to share more details
 Looking forward to your thoughts,  
 Ranjith
 """
-
-    # Friendly Email prompt
-    friendly_prompt = f"""
+    else:
+        prompt = f"""
 You are a B2B sales outreach expert.
 
-Analyze the company and generate outreach email ONLY in the EXACT format below.
+Analyze the following company and generate an outreach email in EXACT format.
 
-Subject: Connect with Key Decision-Makers at [Company Name]
+Company Name: {company_name}
+Industry: {industry}
+Summary: {company_summary}
+Main Products/Services: {main_products}
+
+Return ONLY the email in this format:
+
+Subject: Connect with Key Decision-Makers at {company_name}
 
 Hi [First Name],  
 
-I came across [Company Name] and noticed you’re doing exciting work in [industry/product/project focus].  
+I came across {company_name} and noticed you’re doing exciting work in {industry}.  
 We provide targeted email lists to help you reach:
 • Marketing Managers
 • Operations Leads
@@ -136,11 +152,9 @@ Cheers,
 Ranjith 🚀
 """
 
-    selected_prompt = professional_prompt if "professional" in tone.lower() else friendly_prompt
-
     body = {
         "model": MODEL_NAME,
-        "messages": [{"role": "user", "content": selected_prompt}],
+        "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.55
     }
 
@@ -149,8 +163,7 @@ Ranjith 🚀
         res = r.json()
         return res["choices"][0]["message"]["content"]
     except Exception as e:
-        return f""
-
+        return ""
 
 # -------------------------
 # Parse Subject + Email
@@ -159,15 +172,12 @@ def parse_email(content):
     subject = ""
     body = ""
     lines = content.splitlines()
-
     for i, line in enumerate(lines):
         if line.lower().startswith("subject:"):
             subject = line.split(":", 1)[1].strip()
             body = "\n".join(lines[i+1:]).strip()
             break
-
     return subject, body
-
 
 # -------------------------
 # Single URL Mode
@@ -180,15 +190,13 @@ def analyze_single_url():
             scraped = scrape_website(url)
             st.subheader("⏳ Processing... Please wait")
 
-            # Get only insights JSON separately
             insights_raw = groq_ai_generate_insights(url, scraped)
             insights = extract_json(insights_raw)
 
             company_summary = insights["company_summary"] if insights else "A growing organization"
 
-            # Separate AI calls for both tones
-            prof_email = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", company_summary)
-            friendly_email = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", company_summary)
+            prof_email = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
+            friendly_email = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
 
             sp, bp = parse_email(prof_email)
             sf, bf_body = parse_email(friendly_email)
@@ -205,7 +213,6 @@ def analyze_single_url():
             st.subheader("2️⃣ Friendly Conversational Tone")
             st.text_area("Friendly", f"Subject: {sf}\n\n{bf_body}", height=220)
 
-
 # -------------------------
 # Bulk CSV Mode
 # -------------------------
@@ -214,7 +221,6 @@ def analyze_bulk():
 
     if file is not None:
         df = pd.read_csv(file)
-
         if "url" not in df.columns:
             st.error("CSV must contain 'url' column")
             return
@@ -227,14 +233,12 @@ def analyze_bulk():
                 url = row["url"]
                 scraped = scrape_website(url)
 
-                # Insights separate call
                 insights_raw = groq_ai_generate_insights(url, scraped)
                 insights = extract_json(insights_raw)
                 summary = insights["company_summary"] if insights else "A growing organization"
 
-                # Email separate calls for both tones only
-                p = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", summary)
-                f = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", summary)
+                p = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
+                f = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
 
                 sp, bp = parse_email(p)
                 sf, bf_body = parse_email(f)
@@ -261,7 +265,6 @@ def analyze_bulk():
                 "email_results.csv",
                 "text/csv"
             )
-
 
 # -------------------------
 # UI Layout
