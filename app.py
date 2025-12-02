@@ -15,14 +15,14 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 # -------------------------
 # Scrape Website Content
 # -------------------------
-def scrape_website(website):
+def scrape_website(url):
     try:
-        r = requests.get(website, timeout=10)
+        r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         return text[:4000]
     except Exception as e:
-        st.warning(f"Failed to scrape {website}: {e}")
+        st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
 # -------------------------
@@ -39,7 +39,7 @@ def extract_hook_words(text):
 # -------------------------
 # Generate JSON Insights
 # -------------------------
-def generate_json_insights(website, text):
+def generate_json_insights(url, text):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -54,7 +54,7 @@ You are a B2B data analyst. Based on the company website content below, extract 
 4️⃣ industry: Best guess industry
 
 Website Content: {text}
-Company URL: {website}
+Company URL: {url}
 """
 
     body = {
@@ -77,7 +77,7 @@ Company URL: {website}
 # -------------------------
 # Generate Short Email
 # -------------------------
-def generate_email(website, company_info, hooks, style):
+def generate_email(url, company_info, hooks, style):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -132,17 +132,17 @@ def parse_email(content):
     return subject, body
 
 # -------------------------
-# Single Website Mode
+# Single URL Mode
 # -------------------------
-def analyze_single_website():
-    website = st.text_input("Enter Website URL:")
+def analyze_single_url():
+    url = st.text_input("Enter Website URL:")
     if st.button("Analyze"):
-        if website:
-            scraped = scrape_website(website)
+        if url:
+            scraped = scrape_website(url)
             hooks = extract_hook_words(scraped)
             st.subheader("⏳ Processing... Please wait")
 
-            company_info = generate_json_insights(website, scraped)
+            company_info = generate_json_insights(url, scraped)
             if not company_info:
                 company_info = {
                     "company_summary": "A growing organization",
@@ -152,8 +152,8 @@ def analyze_single_website():
                 }
 
             # Generate 2 Tone Emails (short)
-            prof_email = generate_email(website, company_info, hooks, "Professional Corporate Tone")
-            conv_email = generate_email(website, company_info, hooks, "Friendly Conversational Tone")
+            prof_email = generate_email(url, company_info, hooks, "Professional Corporate Tone")
+            conv_email = generate_email(url, company_info, hooks, "Friendly Conversational Tone")
 
             sp, bp = parse_email(prof_email)
             sc, bc = parse_email(conv_email)
@@ -171,11 +171,11 @@ def analyze_single_website():
 # Bulk CSV Upload Mode
 # -------------------------
 def analyze_bulk():
-    file = st.file_uploader("Upload CSV with 'Website' column", type=["csv"])
+    file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
     if file is not None:
         df = pd.read_csv(file)
-        if "Website" not in df.columns:
-            st.error("CSV must contain 'Website' column")
+        if "url" not in df.columns:
+            st.error("CSV must contain 'url' column")
             return
 
         if st.button("Run Bulk"):
@@ -183,17 +183,11 @@ def analyze_bulk():
             progress = st.progress(0)
 
             for i, row in df.iterrows():
-                website = row["Website"]
-
-                # Skip if website is NaN or empty
-                if pd.isna(website) or str(website).strip() == "":
-                    st.warning(f"Skipping empty or invalid Website at row {i+1}")
-                    continue
-
-                scraped = scrape_website(website)
+                url = row["url"]
+                scraped = scrape_website(url)
                 hooks = extract_hook_words(scraped)
 
-                company_info = generate_json_insights(website, scraped)
+                company_info = generate_json_insights(url, scraped)
                 if not company_info:
                     company_info = {
                         "company_summary": "A growing organization",
@@ -202,14 +196,14 @@ def analyze_bulk():
                         "industry": "Industry"
                     }
 
-                prof_email = generate_email(website, company_info, hooks, "Professional Corporate Tone")
-                conv_email = generate_email(website, company_info, hooks, "Friendly Conversational Tone")
+                prof_email = generate_email(url, company_info, hooks, "Professional Corporate Tone")
+                conv_email = generate_email(url, company_info, hooks, "Friendly Conversational Tone")
 
                 sp, bp = parse_email(prof_email)
                 sc, bc = parse_email(conv_email)
 
                 results.append({
-                    "Website": website,
+                    "url": url,
                     "professional_subject": sp,
                     "professional_body": bp,
                     "conversational_subject": sc,
@@ -235,8 +229,8 @@ def analyze_bulk():
 # -------------------------
 st.title("🌐 Website Outreach AI Agent (Groq)")
 
-mode = st.radio("Select Mode", ["Single Website", "Bulk CSV Upload"])
-if mode == "Single Website":
-    analyze_single_website()
+mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
+if mode == "Single URL":
+    analyze_single_url()
 else:
     analyze_bulk()
