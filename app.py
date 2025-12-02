@@ -184,6 +184,12 @@ def analyze_bulk():
 
             for i, row in df.iterrows():
                 website = row["Website"]
+
+                # Skip if website is NaN or empty
+                if pd.isna(website) or str(website).strip() == "":
+                    st.warning(f"Skipping empty or invalid Website at row {i+1}")
+                    continue
+
                 scraped = scrape_website(website)
                 hooks = extract_hook_words(scraped)
 
