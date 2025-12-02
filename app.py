@@ -50,24 +50,12 @@ def groq_ai_generate(url, text, tone, company_summary):
         "Content-Type": "application/json"
     }
 
-    prompt = f"""
+    # Professional prompt
+    professional_prompt = f"""
 You are a B2B sales outreach expert.
 
-Analyze the company details below and generate:
+Analyze the company and generate outreach email in the EXACT format below:
 
-1️⃣ JSON Insights:
-{{
-"company_summary": "2-3 line summary",
-"main_products": ["service 1", "service 2", "service 3"],
-"ideal_customers": ["ICP1", "ICP2", "ICP3"],
-"industry": "best guess industry"
-}}
-
-2️⃣ Email outreach ONLY in TWO tones using EXACT format below.
-
----
-
-📌 Professional Corporate Tone  
 Subject: Enhance Your Outreach with Targeted Contacts at [Company Name]
 
 Hello [First Name],
@@ -82,10 +70,14 @@ If this aligns with your outreach strategy, I’d be happy to share more details
 
 Looking forward to your thoughts,  
 Ranjith
+"""
 
----
+    # Friendly prompt
+    friendly_prompt = f"""
+You are a B2B sales outreach expert.
 
-📌 Friendly Conversational Tone  
+Analyze the company and generate outreach email in the EXACT format below:
+
 Subject: Connect with Key Decision-Makers at [Company Name]
 
 Hi [First Name],  
@@ -94,31 +86,21 @@ I came across [Company Name] and noticed you’re doing exciting work in [indust
 We provide targeted email lists to help you reach:
 • Marketing Managers
 • Operations Leads
-• Tech Team Heads
+• Tech Team Heads  
 
 If you're open to it, I’d love to share more details — plus a small sample list so you can see the fit firsthand.
 
 What do you say — should we give it a quick try? 😊  
 
 Cheers,  
-Ranjith 🚀  
-
----
-
-⚠️ Additional rules:
-- Do NOT mention scraping
-- Keep email short
-- Replace placeholders contextually based on industry
-- Keep structure same (don't add/remove sections)
-
-Company URL: {url}
-Company Summary: {company_summary}
-Scraped Content: {text}
+Ranjith 🚀
 """
+
+    final_prompt = professional_prompt if "professional" in tone.lower() else friendly_prompt
 
     body = {
         "model": MODEL_NAME,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{"role": "user", "content": final_prompt}],
         "temperature": 0.55
     }
 
@@ -158,35 +140,26 @@ def analyze_single_url():
             scraped = scrape_website(url)
             st.subheader("⏳ Processing... Please wait")
 
-            base_resp = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
-            insights = extract_json(base_resp)
-
+            # First insights call
+            base = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
+            insights = extract_json(base)
             company_summary = insights["company_summary"] if insights else "A growing organization"
 
-            prof = groq_ai_generate(url, scraped, "Professional Corporate Tone", company_summary)
-            conv = groq_ai_generate(url, scraped, "Friendly Conversational Tone", company_summary)
-            consult = groq_ai_generate(url, scraped, "Insight-Driven Consultative Tone", company_summary)
-            urgent = groq_ai_generate(url, scraped, "Urgency Action-Oriented Tone", company_summary)
+            # Individual AI calls for both tones separately
+            professional = groq_ai_generate(url, scraped, "Professional Corporate Tone", company_summary)
+            friendly = groq_ai_generate(url, scraped, "Friendly Conversational Tone", company_summary)
 
-            sp, bp = parse_email(prof)
-            sc, bc = parse_email(conv)
-            si_sub, si_body = parse_email(consult)
-            sa_sub, sa_body = parse_email(urgent)
+            sp, bp = parse_email(professional)
+            sf, bf_body = parse_email(friendly)
 
             st.subheader("📌 Company Insights")
             st.json(insights)
 
             st.subheader("1️⃣ Professional Corporate Tone")
-            st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=260)
+            st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
 
             st.subheader("2️⃣ Friendly Conversational Tone")
-            st.text_area("Conversational", f"Subject: {sc}\n\n{bc}", height=260)
-
-            st.subheader("3️⃣ Insight-Driven Consultative Tone")
-            st.text_area("Insight-Driven", f"Subject: {si_sub}\n\n{si_body}", height=260)
-
-            st.subheader("4️⃣ Action-Oriented Urgency Tone")
-            st.text_area("Action-Oriented", f"Subject: {sa_sub}\n\n{sa_body}", height=260)
+            st.text_area("Friendly", f"Subject: {sf}\n\n{bf_body}", height=220)
 
 
 # -------------------------
@@ -210,30 +183,23 @@ def analyze_bulk():
                 url = row["url"]
                 scraped = scrape_website(url)
 
-                base_resp = groq_ai_generate(url, scraped, "Professional Corporate Tone", "Analyzing...")
-                insights = extract_json(base_resp)
-                company_summary = insights["company_summary"] if insights else "A growing organization"
+                base = groq_ai_generate(url, scraped, "Professional", "Analyzing...")
+                insights = extract_json(base)
+                summary = insights["company_summary"] if insights else "A growing organization"
 
-                prof = groq_ai_generate(url, scraped, "Professional Corporate Tone", company_summary)
-                conv = groq_ai_generate(url, scraped, "Friendly Conversational Tone", company_summary)
-                consult = groq_ai_generate(url, scraped, "Insight-Driven Consultative Tone", company_summary)
-                urgent = groq_ai_generate(url, scraped, "Urgency Action-Oriented Tone", company_summary)
+                # Separate AI calls for both tones
+                p_resp = groq_ai_generate(url, scraped, "Professional Corporate Tone", summary)
+                f_resp = groq_ai_generate(url, scraped, "Friendly Conversational Tone", summary)
 
-                sp, bp = parse_email(prof)
-                sc, bc = parse_email(conv)
-                si_sub, si_body = parse_email(consult)
-                sa_sub, sa_body = parse_email(urgent)
+                sp, bp = parse_email(p_resp)
+                sf, bf_body = parse_email(f_resp)
 
                 results.append({
                     "url": url,
                     "professional_subject": sp,
                     "professional_body": bp,
-                    "conversational_subject": sc,
-                    "conversational_body": bc,
-                    "insight_subject": si_sub,
-                    "insight_body": si_body,
-                    "action_subject": sa_sub,
-                    "action_body": sa_body
+                    "friendly_subject": sf,
+                    "friendly_body": bf_body
                 })
 
                 progress.progress((i+1)/len(df))
