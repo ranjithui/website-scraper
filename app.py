@@ -29,16 +29,15 @@ def scrape_website(url):
 # Extract Hook Words
 # -------------------------
 def extract_hook_words(text):
-    # Take first 2-3 meaningful sentences or key phrases
     sentences = re.split(r'\. |\n', text)
     hooks = []
     for s in sentences:
-        if len(s) > 20 and len(hooks) < 2:
+        if len(s) > 20 and len(hooks) < 1:
             hooks.append(s.strip())
-    return " ".join(hooks) if hooks else "innovative solutions in their industry"
+    return hooks[0] if hooks else "innovative solutions in their industry"
 
 # -------------------------
-# Groq AI JSON Insight Generator
+# Generate JSON Insights
 # -------------------------
 def generate_json_insights(url, text):
     headers = {
@@ -49,7 +48,7 @@ def generate_json_insights(url, text):
     prompt = f"""
 You are a B2B data analyst. Based on the company website content below, extract the following in JSON:
 
-1️⃣ company_summary: 2-3 sentence summary  
+1️⃣ company_summary: 1-2 sentence summary  
 2️⃣ main_products: List main products/services  
 3️⃣ target_roles: List 3 key decision-maker roles likely to use your product/service  
 4️⃣ industry: Best guess industry
@@ -76,7 +75,7 @@ Company URL: {url}
         return None
 
 # -------------------------
-# Groq AI Email Generator
+# Generate Short Email
 # -------------------------
 def generate_email(url, company_info, hooks, style):
     headers = {
@@ -84,26 +83,25 @@ def generate_email(url, company_info, hooks, style):
         "Content-Type": "application/json"
     }
 
-    # Use extracted info for relevant bullets
     prompt = f"""
-You are a B2B email expert. Generate an email in {style} using the following company info and hooks.
+You are a B2B email expert. Generate a **short email** in {style} using the following company info and hook.
 
 Company Info:
 {json.dumps(company_info)}
 
-Hook Words: {hooks}
+Hook: {hooks}
 
 Email Format:
 Subject: One-line sales subject
 
 Hello [First Name],
 
-We offer targeted email lists to help you connect with:
+We provide targeted email lists to connect with:
 • {company_info['target_roles'][0]}
 • {company_info['target_roles'][1]}
 • {company_info['target_roles'][2]}
 
-If this could help your outreach efforts, I’d be happy to share more details along with a small sample for your review.
+If this could help your outreach efforts, I’d be happy to share a small sample for your review.
 """
 
     body = {
@@ -126,13 +124,11 @@ def parse_email(content):
     subject = ""
     body = ""
     lines = content.splitlines()
-
     for i, line in enumerate(lines):
         if line.lower().startswith("subject:"):
             subject = line.split(":", 1)[1].strip()
             body = "\n".join(lines[i+1:]).strip()
             break
-
     return subject, body
 
 # -------------------------
@@ -140,7 +136,6 @@ def parse_email(content):
 # -------------------------
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
-
     if st.button("Analyze"):
         if url:
             scraped = scrape_website(url)
@@ -156,7 +151,7 @@ def analyze_single_url():
                     "industry": "Industry"
                 }
 
-            # Generate 2 Tone Emails
+            # Generate 2 Tone Emails (short)
             prof_email = generate_email(url, company_info, hooks, "Professional Corporate Tone")
             conv_email = generate_email(url, company_info, hooks, "Friendly Conversational Tone")
 
@@ -167,20 +162,18 @@ def analyze_single_url():
             st.json(company_info)
 
             st.subheader("1️⃣ Professional Corporate Tone")
-            st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=260)
+            st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
 
             st.subheader("2️⃣ Friendly Conversational Tone")
-            st.text_area("Conversational", f"Subject: {sc}\n\n{bc}", height=260)
+            st.text_area("Conversational", f"Subject: {sc}\n\n{bc}", height=220)
 
 # -------------------------
 # Bulk CSV Upload Mode
 # -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
-
     if file is not None:
         df = pd.read_csv(file)
-
         if "url" not in df.columns:
             st.error("CSV must contain 'url' column")
             return
@@ -237,7 +230,6 @@ def analyze_bulk():
 st.title("🌐 Website Outreach AI Agent (Groq)")
 
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
-
 if mode == "Single URL":
     analyze_single_url()
 else:
