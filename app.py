@@ -33,9 +33,10 @@ def extract_json(content):
         end = content.rfind("}") + 1
         json_str = content[start:end]
         data = json.loads(json_str)
-        # Ensure company_name exists
         if "company_name" not in data:
             data["company_name"] = "This Company"
+        if "ideal_customers" not in data:
+            data["ideal_customers"] = []
         return data
     except:
         return None
@@ -92,6 +93,9 @@ def groq_ai_generate_email(url, text, tone, insights):
     company_summary = insights.get("company_summary", "A growing organization")
     main_products = ", ".join(insights.get("main_products", []))
     industry = insights.get("industry", "your industry")
+    ideal_customers = insights.get("ideal_customers", [])
+    # Convert ideal customers into bullets
+    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "Your ideal clients"
 
     if "professional" in tone.lower():
         prompt = f"""
@@ -103,6 +107,7 @@ Company Name: {company_name}
 Industry: {industry}
 Summary: {company_summary}
 Main Products/Services: {main_products}
+Ideal Customers: {customers_bullets}
 
 Return ONLY the email in this format:
 
@@ -112,9 +117,7 @@ Hello [First Name],
 
 I noticed {company_name} is focusing on {main_products}.  
 We provide targeted email lists to help you connect with:
-• CIOs
-• Product Managers
-• Risk Officers
+• {customers_bullets}
 
 If this aligns with your outreach strategy, I’d be happy to share more details along with a small sample for your review.
 
@@ -131,6 +134,7 @@ Company Name: {company_name}
 Industry: {industry}
 Summary: {company_summary}
 Main Products/Services: {main_products}
+Ideal Customers: {customers_bullets}
 
 Return ONLY the email in this format:
 
@@ -140,9 +144,7 @@ Hi [First Name],
 
 I came across {company_name} and noticed you’re doing exciting work in {industry}.  
 We provide targeted email lists to help you reach:
-• Marketing Managers
-• Operations Leads
-• Tech Team Heads
+• {customers_bullets}
 
 If you're open to it, I’d love to share more details — plus a small sample list so you can see the fit firsthand.
 
