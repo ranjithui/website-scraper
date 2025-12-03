@@ -287,7 +287,11 @@ def analyze_bulk_row_by_row():
                 with st.spinner("Scraping + Generating insights & emails (this may take a few seconds)..."):
                     scraped = scrape_website(current_Website)
 
-                    insights_raw = groq_ai_generate_insights(current_Website, scraped)
+                    if not scraped or scraped == {}:
+        st.warning(f"Skipping - No data scraped from {current_Website}")
+        st.session_state.bulk_index += 1
+        st.rerun()
+    insights_raw = groq_ai_generate_insights(current_Website, scraped)
                     insights = extract_json(insights_raw)
 
                     prof_email = groq_ai_generate_email(current_Website, scraped, "Professional Corporate Tone", insights)
