@@ -11,6 +11,44 @@ GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
 
+# -----------------------------------------------------
+# Smart Deliverability Filter (New)
+# -----------------------------------------------------
+def smart_filter_email(text):
+    risky_phrases = [
+        "100% verified", "100% guarantee", "guaranteed", "free",
+        "free sample", "cheap", "act fast", "buy now",
+        "unlimited leads", "no risk", "exclusive deal"
+    ]
+
+    for phrase in risky_phrases:
+        text = text.replace(phrase, "")
+
+    replacements = {
+        "email lists": "targeted contact data",
+        "high-quality leads": "relevant decision-makers",
+        "grow fast": "support your outreach goals",
+        "amazing results": "practical outcomes",
+        "free trial": "a small trial dataset"
+    }
+
+    for old, new in replacements.items():
+        text = text.replace(old, new)
+
+    # Remove excessive emojis
+    emojis = "🚀🔥💥✨⚡"
+    emoji_count = 0
+    cleaned = ""
+    for char in text:
+        if char in emojis:
+            if emoji_count < 1:
+                emoji_count += 1
+                cleaned += char
+        else:
+            cleaned += char
+
+    return cleaned.strip()
+
 # -------------------------
 # Scrape Website Content
 # -------------------------
@@ -58,8 +96,8 @@ Return in this exact JSON format:
 {{
 "company_name": "Company Name",
 "company_summary": "2-3 line summary",
-"main_products": ["service 1", "service 2", "service 3"],
-"ideal_customers": ["ICP1", "ICP2", "ICP3"],
+"main_products": ["service 1", "service 2"],
+"ideal_customers": ["ICP1", "ICP2"],
 "industry": "best guess industry"
 }}
 
@@ -77,11 +115,11 @@ Website Content: {text}
         r = requests.post(API_URL, headers=headers, json=body)
         res = r.json()
         return res["choices"][0]["message"]["content"]
-    except Exception as e:
+    except:
         return ""
 
 # -------------------------
-# Call AI for Emails Only
+# Call AI for Emails with Spam-Free Prompts (New)
 # -------------------------
 def groq_ai_generate_email(url, text, tone, insights):
     headers = {
@@ -94,64 +132,49 @@ def groq_ai_generate_email(url, text, tone, insights):
     main_products = ", ".join(insights.get("main_products", []))
     industry = insights.get("industry", "your industry")
     ideal_customers = insights.get("ideal_customers", [])
-    # Convert ideal customers into bullets
-    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "Your ideal clients"
+    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "relevant decision-makers"
 
     if "professional" in tone.lower():
         prompt = f"""
 You are a B2B sales outreach expert.
 
-Analyze the following company and generate an outreach email in EXACT format.
+Craft a concise outreach email. Avoid spam-trigger words like “free”, “guarantee”, etc.
+Be value-focused and professional.
 
-Company Name: {company_name}
-Industry: {industry}
-Summary: {company_summary}
-Main Products/Services: {main_products}
-Ideal Customers: {customers_bullets}
+Return ONLY this format:
 
-Return ONLY the email in this format:
-
-Subject: Enhance Your Outreach with Targeted Contacts at {company_name}
+Subject: Connect with the Right Decision-Makers at {company_name}
 
 Hello [First Name],
 
-I noticed {company_name} is focusing on {main_products}.  
-We provide targeted email lists to help you connect with:
-• {customers_bullets}
+I noticed {company_name} is focused on {main_products}.  
+We help teams connect with the right decision-makers in {industry}, reducing time spent on unqualified outreach.
 
-If this aligns with your outreach strategy, I’d be happy to share more details along with a small sample for your review.
+If you're open to it, I can share a small tailored sample for quick evaluation.
 
-Looking forward to your thoughts,  
+Warm regards,  
 Ranjith
 """
     else:
         prompt = f"""
 You are a B2B sales outreach expert.
 
-Analyze the following company and generate an outreach email in EXACT format.
+Write a friendly, short outreach email without spam triggers.
+Be casual but still business-relevant.
 
-Company Name: {company_name}
-Industry: {industry}
-Summary: {company_summary}
-Main Products/Services: {main_products}
-Ideal Customers: {customers_bullets}
+Return ONLY this format:
 
-Return ONLY the email in this format:
-
-Subject: Connect with Key Decision-Makers at {company_name}
+Subject: Quick Question About Outreach at {company_name}
 
 Hi [First Name],  
 
-I came across {company_name} and noticed you’re doing exciting work in {industry}.  
-We provide targeted email lists to help you reach:
-• {customers_bullets}
+Loved seeing how {company_name} is making an impact in {industry}.  
+We help teams reach relevant decision-makers so outreach becomes more productive.
 
-If you're open to it, I’d love to share more details — plus a small sample list so you can see the fit firsthand.
+If it makes sense to explore, I can share a small example to check fit.
 
-What do you say — should we give it a quick try? 😊
-
-Cheers,  
-Ranjith 🚀
+Thanks a ton,  
+Ranjith
 """
 
     body = {
@@ -164,11 +187,11 @@ Ranjith 🚀
         r = requests.post(API_URL, headers=headers, json=body)
         res = r.json()
         return res["choices"][0]["message"]["content"]
-    except Exception as e:
+    except:
         return ""
 
 # -------------------------
-# Parse Subject + Email
+# Parse + Filter Emails (Updated)
 # -------------------------
 def parse_email(content):
     subject = ""
@@ -179,6 +202,10 @@ def parse_email(content):
             subject = line.split(":", 1)[1].strip()
             body = "\n".join(lines[i+1:]).strip()
             break
+
+    subject = smart_filter_email(subject)
+    body = smart_filter_email(body)
+
     return subject, body
 
 # -------------------------
@@ -195,13 +222,11 @@ def analyze_single_url():
             insights_raw = groq_ai_generate_insights(url, scraped)
             insights = extract_json(insights_raw)
 
-            company_summary = insights["company_summary"] if insights else "A growing organization"
+            p = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
+            f = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
 
-            prof_email = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
-            friendly_email = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
-
-            sp, bp = parse_email(prof_email)
-            sf, bf_body = parse_email(friendly_email)
+            sp, bp = parse_email(p)
+            sf, bf = parse_email(f)
 
             st.subheader("📌 Company Insights")
             if insights:
@@ -213,10 +238,10 @@ def analyze_single_url():
             st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
 
             st.subheader("2️⃣ Friendly Conversational Tone")
-            st.text_area("Friendly", f"Subject: {sf}\n\n{bf_body}", height=220)
+            st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
 
 # -------------------------
-# Bulk CSV Mode
+# Bulk Upload Mode
 # -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
@@ -243,7 +268,7 @@ def analyze_bulk():
                 f = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
 
                 sp, bp = parse_email(p)
-                sf, bf_body = parse_email(f)
+                sf, bf = parse_email(f)
 
                 results.append({
                     "url": url,
@@ -251,7 +276,7 @@ def analyze_bulk():
                     "professional_subject": sp,
                     "professional_body": bp,
                     "friendly_subject": sf,
-                    "friendly_body": bf_body
+                    "friendly_body": bf
                 })
 
                 progress.progress((i+1)/len(df))
@@ -271,7 +296,7 @@ def analyze_bulk():
 # -------------------------
 # UI Layout
 # -------------------------
-st.title("🌐 Website Outreach AI Agent (Groq)")
+st.title("🌐 Website Outreach AI Agent (Groq) — Spam Free Edition")
 
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
 
