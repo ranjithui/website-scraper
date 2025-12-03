@@ -288,6 +288,10 @@ def analyze_bulk_row_by_row():
                     scraped = scrape_website(current_Website)
 
                     if not scraped or scraped == {}:
+        st.warning(f"Skipping - No data scraped from {current_Website}")
+        st.session_state.bulk_index += 1
+        st.rerun()
+
         
         st.warning(f"Skipping - No data scraped from {current_Website}")
         st.session_state.bulk_index += 1
