@@ -15,7 +15,7 @@ MODEL_NAME = "llama-3.3-70b-versatile"
 # Helper: safe URL getter
 # -------------------------
 
-def normalize_url(val):
+def normalize_Website(val):
     if not isinstance(val, str):
         return ""
     val = val.strip()
@@ -30,16 +30,16 @@ def normalize_url(val):
 # Scrape Website Content
 # -------------------------
 
-def scrape_website(url):
-    if not url:
+def scrape_website(Website):
+    if not Website:
         return ""
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(Website, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         return text[:4000]
     except Exception as e:
-        return f"""[SCRAPE_FAILED] Could not fetch {url}: {e}"""
+        return f"""[SCRAPE_FAILED] Could not fetch {Website}: {e}"""
 
 # -------------------------
 # Extract JSON Insights (unchanged)
@@ -63,7 +63,7 @@ def extract_json(content):
 # Call AI for Insights Only
 # -------------------------
 
-def groq_ai_generate_insights(url, text):
+def groq_ai_generate_insights(Website, text):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -82,7 +82,7 @@ Return in this exact JSON format:
 "industry": "best guess industry"
 }
 
-Company URL: {url}
+Company URL: {Website}
 Website Content: {text}
 """
 
@@ -103,7 +103,7 @@ Website Content: {text}
 # Call AI for Emails Only
 # -------------------------
 
-def groq_ai_generate_email(url, text, tone, insights):
+def groq_ai_generate_email(Website, text, tone, insights):
     headers = {
         "Authorization": f"Bearer {GROQ_API_KEY}",
         "Content-Type": "application/json"
@@ -205,21 +205,21 @@ def parse_email(content):
 # Single URL Mode (unchanged)
 # -------------------------
 
-def analyze_single_url():
-    url = st.text_input("Enter Website URL:")
+def analyze_single_Website():
+    Website = st.text_input("Enter Website URL:")
 
     if st.button("Analyze"):
-        if url:
-            scraped = scrape_website(normalize_url(url))
+        if Website:
+            scraped = scrape_website(normalize_Website(Website))
             st.subheader("⏳ Processing... Please wait")
 
-            insights_raw = groq_ai_generate_insights(url, scraped)
+            insights_raw = groq_ai_generate_insights(Website, scraped)
             insights = extract_json(insights_raw)
 
             company_summary = insights["company_summary"] if insights else "A growing organization"
 
-            prof_email = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
-            friendly_email = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
+            prof_email = groq_ai_generate_email(Website, scraped, "Professional Corporate Tone", insights)
+            friendly_email = groq_ai_generate_email(Website, scraped, "Friendly Conversational Tone", insights)
 
             sp, bp = parse_email(prof_email)
             sf, bf_body = parse_email(friendly_email)
@@ -241,7 +241,7 @@ def analyze_single_url():
 # -------------------------
 
 def analyze_bulk_row_by_row():
-    st.info("Upload a CSV with a 'Website' column (falls back to 'url' column). Processing is manual: press 'Fetch Current' then 'Next Website'.")
+    st.info("Upload a CSV with a 'Website' column (falls back to 'Website' column). Processing is manual: press 'Fetch Current' then 'Next Website'.")
 
     uploaded = st.file_uploader("Upload CSV", type=["csv"] , key="bulk_upload")
 
@@ -254,14 +254,14 @@ def analyze_bulk_row_by_row():
                 st.error(f"Failed to read CSV: {e}")
                 return
 
-            # Normalize column name: prefer 'Website', fallback to 'url'
+            # Normalize column name: prefer 'Website', fallback to 'Website'
             if "Website" not in df.columns and "website" in df.columns:
                 df = df.rename(columns={"website": "Website"})
-            if "Website" not in df.columns and "url" in df.columns:
-                df = df.rename(columns={"url": "Website"})
+            if "Website" not in df.columns and "Website" in df.columns:
+                df = df.rename(columns={"Website": "Website"})
 
             if "Website" not in df.columns:
-                st.error("CSV must contain a 'Website' or 'url' column")
+                st.error("CSV must contain a 'Website' or 'Website' column")
                 return
 
             st.session_state.bulk_df = df.reset_index(drop=True)
@@ -275,29 +275,29 @@ def analyze_bulk_row_by_row():
         total = st.session_state.bulk_total
 
         st.sidebar.markdown(f"**Row:** {idx+1} of {total}")
-        current_url_raw = df.loc[idx, "Website"]
-        current_url = normalize_url(str(current_url_raw))
+        current_Website_raw = df.loc[idx, "Website"]
+        current_Website = normalize_Website(str(current_Website_raw))
 
         st.subheader(f"Record {idx+1} of {total}")
-        st.write(current_url)
+        st.write(current_Website)
 
         col1, col2 = st.columns([1,1])
         with col1:
             if st.button("Fetch Current", key=f"fetch_{idx}"):
                 with st.spinner("Scraping + Generating insights & emails (this may take a few seconds)..."):
-                    scraped = scrape_website(current_url)
+                    scraped = scrape_website(current_Website)
 
-                    insights_raw = groq_ai_generate_insights(current_url, scraped)
+                    insights_raw = groq_ai_generate_insights(current_Website, scraped)
                     insights = extract_json(insights_raw)
 
-                    prof_email = groq_ai_generate_email(current_url, scraped, "Professional Corporate Tone", insights)
-                    friendly_email = groq_ai_generate_email(current_url, scraped, "Friendly Conversational Tone", insights)
+                    prof_email = groq_ai_generate_email(current_Website, scraped, "Professional Corporate Tone", insights)
+                    friendly_email = groq_ai_generate_email(current_Website, scraped, "Friendly Conversational Tone", insights)
 
                     sp, bp = parse_email(prof_email)
                     sf, bf_body = parse_email(friendly_email)
 
                     st.session_state.last_result = {
-                        "url": current_url,
+                        "Website": current_Website,
                         "insights_raw": insights_raw,
                         "insights": insights,
                         "professional_subject": sp,
@@ -348,6 +348,6 @@ st.title("🌐 Website Outreach AI Agent (Groq) - Row-by-Row Bulk Mode")
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"], index=1)
 
 if mode == "Single URL":
-    analyze_single_url()
+    analyze_single_Website()
 else:
     analyze_bulk_row_by_row()
