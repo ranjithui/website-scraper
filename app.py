@@ -43,7 +43,7 @@ def extract_json(content):
         return None
 
 # -------------------------
-# Call AI for Insights Only
+# Call AI for Insights
 # -------------------------
 def groq_ai_generate_insights(url, text):
     headers = {
@@ -78,111 +78,11 @@ Website Content: {text}
         r = requests.post(API_URL, headers=headers, json=body)
         res = r.json()
         return res["choices"][0]["message"]["content"]
-    except Exception as e:
+    except Exception:
         return ""
 
 # -------------------------
-# Call AI for Emails Only
-# -------------------------
-def groq_ai_generate_email(url, text, tone, insights):
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    company_name = insights.get("company_name", "This Company")
-    company_summary = insights.get("company_summary", "A growing organization")
-    main_products = ", ".join(insights.get("main_products", []))
-    industry = insights.get("industry", "your industry")
-    ideal_customers = insights.get("ideal_customers", [])
-    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "Your ideal clients"
-
-    if "professional" in tone.lower():
-        prompt = f"""
-You are a B2B sales outreach expert.
-
-Analyze the following company and generate an outreach email in EXACT format.
-
-Company Name: {company_name}
-Industry: {industry}
-Summary: {company_summary}
-Main Products/Services: {main_products}
-Ideal Customers: {customers_bullets}
-
-Return ONLY the email in this format:
-
-Subject: Enhance Your Outreach with Targeted Contacts at {company_name}
-
-Hello [First Name],
-
-I noticed {company_name} is focusing on {main_products}.  
-We provide targeted email lists to help you connect with:
-• {customers_bullets}
-
-If this aligns with your outreach strategy, I’d be happy to share more details along with a small sample for your review.
-
-Looking forward to your thoughts,  
-Ranjith
-"""
-    else:
-        prompt = f"""
-You are a B2B sales outreach expert.
-
-Analyze the following company and generate an outreach email in EXACT format.
-
-Company Name: {company_name}
-Industry: {industry}
-Summary: {company_summary}
-Main Products/Services: {main_products}
-Ideal Customers: {customers_bullets}
-
-Return ONLY the email in this format:
-
-Subject: Connect with Key Decision-Makers at {company_name}
-
-Hi [First Name],  
-
-I came across {company_name} and noticed you’re doing exciting work in {industry}.  
-We provide targeted email lists to help you reach:
-• {customers_bullets}
-
-If you're open to it, I’d love to share more details — plus a small sample list so you can see the fit firsthand.
-
-What do you say — should we give it a quick try? 😊
-
-Cheers,  
-Ranjith 🚀
-"""
-
-    body = {
-        "model": MODEL_NAME,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.55
-    }
-
-    try:
-        r = requests.post(API_URL, headers=headers, json=body)
-        res = r.json()
-        return res["choices"][0]["message"]["content"]
-    except Exception as e:
-        return ""
-
-# -------------------------
-# Parse Subject + Email
-# -------------------------
-def parse_email(content):
-    subject = ""
-    body = ""
-    lines = content.splitlines()
-    for i, line in enumerate(lines):
-        if line.lower().startswith("subject:"):
-            subject = line.split(":", 1)[1].strip()
-            body = "\n".join(lines[i+1:]).strip()
-            break
-    return subject, body
-
-# -------------------------
-# Smart Spam-Word Filter
+# Smart Spam-Word Cleaner
 # -------------------------
 def clean_spam_words(text):
     replacements = {
@@ -196,7 +96,6 @@ def clean_spam_words(text):
         r"\bact now\b": "let me know if helpful",
         r"\bhurry\b": "let me know if helpful",
         r"\bexclusive access\b": "early access",
-        r"\bmarketing list\b": "targeted contacts",
         r"\bearn\b": "achieve",
         r"\bprofit\b": "business growth",
         r"\brisk-free\b": "optional",
@@ -204,56 +103,140 @@ def clean_spam_words(text):
         r"\bmoney\b": "budget",
         r"\bcredit\b": "approval"
     }
-
     for bad, good in replacements.items():
         text = re.sub(bad, good, text, flags=re.IGNORECASE)
     return text
 
 # -------------------------
-# Single URL Mode
+# Spam Score Calculator
+# -------------------------
+def calculate_spam_score(text):
+    spam_keywords = [
+        "free", "buy", "guaranteed", "best price", "offer", "sale",
+        "limited time", "act now", "hurry", "exclusive access",
+        "earn", "profit", "risk-free", "money", "credit"
+    ]
+    text_lower = text.lower()
+    risk_count = sum(1 for keyword in spam_keywords if keyword in text_lower)
+    score = max(0, 100 - (risk_count * 10))
+    if score >= 85:
+        status = "🟢 Excellent Deliverability"
+    elif score >= 70:
+        status = "🟡 Good But Can Improve"
+    else:
+        status = "🔴 High Risk — Needs Fixing"
+    return score, status
+
+# -------------------------
+# Generate Outreach Email
+# -------------------------
+def groq_ai_generate_email(url, text, tone, insights):
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    company_name = insights.get("company_name", "This Company")
+    company_summary = insights.get("company_summary", "A growing organization")
+    main_products = ", ".join(insights.get("main_products", []))
+    industry = insights.get("industry", "your industry")
+    ideal_customers = insights.get("ideal_customers", [])
+    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "your target audience"
+
+    if "professional" in tone.lower():
+        prompt = f"""
+Subject: Enhance Your Outreach with Targeted Contacts at {company_name}
+
+Hello [First Name],
+
+I noticed {company_name} is focusing on {main_products}.
+We provide targeted email lists to help you connect with:
+• {customers_bullets}
+
+If this aligns with your outreach strategy, I’d be happy to share more details with a small sample for review.
+
+Looking forward to your thoughts,
+Ranjith
+"""
+    else:
+        prompt = f"""
+Subject: Connect with Key Decision-Makers at {company_name}
+
+Hi [First Name],
+
+I came across {company_name} and noticed you're doing great work in {industry}.
+We provide targeted email lists to help you reach:
+• {customers_bullets}
+
+If you're open to it, I'd love to share a quick sample so you can validate the fit.
+
+Cheers,
+Ranjith 🚀
+"""
+
+    try:
+        body = {
+            "model": MODEL_NAME,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.55
+        }
+        r = requests.post(API_URL, headers=headers, json=body)
+        return r.json()["choices"][0]["message"]["content"]
+    except Exception:
+        return ""
+
+# -------------------------
+# Extract Subject & Body
+# -------------------------
+def parse_email(content):
+    subject, body = "", ""
+    lines = content.splitlines()
+    for i, l in enumerate(lines):
+        if l.lower().startswith("subject:"):
+            subject = l.split(":", 1)[1].strip()
+            body = "\n".join(lines[i+1:]).strip()
+            break
+    return subject, body
+
+# -------------------------
+# Single URL Output
 # -------------------------
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
+    if st.button("Analyze") and url:
+        scraped = scrape_website(url)
+        st.subheader("⏳ Processing... Please wait...")
 
-    if st.button("Analyze"):
-        if url:
-            scraped = scrape_website(url)
-            st.subheader("⏳ Processing... Please wait")
+        insights_raw = groq_ai_generate_insights(url, scraped)
+        insights = extract_json(insights_raw)
 
-            insights_raw = groq_ai_generate_insights(url, scraped)
-            insights = extract_json(insights_raw)
+        prof_email = groq_ai_generate_email(url, scraped, "professional", insights)
+        friendly_email = groq_ai_generate_email(url, scraped, "friendly", insights)
 
-            company_summary = insights["company_summary"] if insights else "A growing organization"
+        sp, bp = parse_email(prof_email)
+        sf, bf = parse_email(friendly_email)
 
-            prof_email = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
-            friendly_email = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
+        # Clean
+        sp, bp = clean_spam_words(sp), clean_spam_words(bp)
+        sf, bf = clean_spam_words(sf), clean_spam_words(bf)
 
-            sp, bp = parse_email(prof_email)
-            sp = clean_spam_words(sp)
-            bp = clean_spam_words(bp)
+        score_p, status_p = calculate_spam_score(sp + " " + bp)
+        score_f, status_f = calculate_spam_score(sf + " " + bf)
 
-            sf, bf = parse_email(friendly_email)
-            sf = clean_spam_words(sf)
-            bf = clean_spam_words(bf)
+        st.json(insights)
+        st.subheader("1️⃣ Professional Tone")
+        st.markdown(f"**Spam Score:** {score_p}/100 — {status_p}")
+        st.text_area("Professional Email", f"Subject: {sp}\n\n{bp}", height=220)
 
-            st.subheader("📌 Company Insights")
-            if insights:
-                st.json(insights)
-            else:
-                st.text("No insights found")
-
-            st.subheader("1️⃣ Professional Corporate Tone")
-            st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
-
-            st.subheader("2️⃣ Friendly Conversational Tone")
-            st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
+        st.subheader("2️⃣ Friendly Tone")
+        st.markdown(f"**Spam Score:** {score_f}/100 — {status_f}")
+        st.text_area("Friendly Email", f"Subject: {sf}\n\n{bf}", height=220)
 
 # -------------------------
-# Bulk CSV Mode
+# Bulk CSV Upload
 # -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'url' column", type=["csv"])
-
     if file is not None:
         df = pd.read_csv(file)
         if "url" not in df.columns:
@@ -270,38 +253,38 @@ def analyze_bulk():
 
                 insights_raw = groq_ai_generate_insights(url, scraped)
                 insights = extract_json(insights_raw)
-                summary = insights["company_summary"] if insights else "A growing organization"
 
-                p = groq_ai_generate_email(url, scraped, "Professional Corporate Tone", insights)
-                f = groq_ai_generate_email(url, scraped, "Friendly Conversational Tone", insights)
+                p = groq_ai_generate_email(url, scraped, "professional", insights)
+                f = groq_ai_generate_email(url, scraped, "friendly", insights)
 
                 sp, bp = parse_email(p)
-                sp = clean_spam_words(sp)
-                bp = clean_spam_words(bp)
-
                 sf, bf = parse_email(f)
-                sf = clean_spam_words(sf)
-                bf = clean_spam_words(bf)
+
+                sp, bp = clean_spam_words(sp), clean_spam_words(bp)
+                sf, bf = clean_spam_words(sf), clean_spam_words(bf)
+
+                score_p, _ = calculate_spam_score(sp + " " + bp)
+                score_f, _ = calculate_spam_score(sf + " " + bf)
 
                 results.append({
                     "url": url,
-                    "company_summary": summary,
                     "professional_subject": sp,
                     "professional_body": bp,
+                    "professional_spam_score": score_p,
                     "friendly_subject": sf,
-                    "friendly_body": bf
+                    "friendly_body": bf,
+                    "friendly_spam_score": score_f
                 })
 
-                progress.progress((i+1)/len(df))
+                progress.progress((i+1) / len(df))
 
-            result_df = pd.DataFrame(results)
-
-            st.success("Bulk Email Generation Completed!")
-            st.dataframe(result_df)
+            out_df = pd.DataFrame(results)
+            st.success("Completed!")
+            st.dataframe(out_df)
 
             st.download_button(
-                "Download Results CSV",
-                result_df.to_csv(index=False).encode("utf-8"),
+                "Download CSV",
+                out_df.to_csv(index=False).encode("utf-8"),
                 "email_results.csv",
                 "text/csv"
             )
