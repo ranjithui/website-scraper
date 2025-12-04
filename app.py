@@ -55,18 +55,20 @@ def extract_json(content):
         if start == -1 or end == -1:
             return None
         data = json.loads(content[start:end])
-        if "company_name" not in data:
-            data["company_name"] = "This Company"
-        if "company_summary" not in data:
-            data["company_summary"] = "A growing organization"
-        if "main_products" not in data:
-            data["main_products"] = []
-        if "ideal_customers" not in data:
-            data["ideal_customers"] = []
-        if "industry" not in data:
-            data["industry"] = "General"
-        if "ideal_audience" not in data:
-            data["ideal_audience"] = []   # ← added
+
+        defaults = {
+            "company_name": "This Company",
+            "company_summary": "A growing organization",
+            "main_products": [],
+            "ideal_customers": [],
+            "ideal_audience": [],
+            "industry": "General",
+            "countries_of_operation": []  # NEW FIELD
+        }
+        for k, v in defaults.items():
+            if k not in data:
+                data[k] = v
+
         return data
     except:
         return None
@@ -88,7 +90,8 @@ Return in this exact JSON format:
 "main_products": ["service 1", "service 2"],
 "ideal_customers": ["ICP1", "ICP2"],
 "ideal_audience": ["audience1", "audience2"],
-"industry": "best guess industry"
+"industry": "best guess industry",
+"countries_of_operation": ["Country1", "Country2"]
 }}
 
 Company URL: {url}
@@ -114,7 +117,9 @@ def groq_ai_generate_email(url, text, tone, insights):
     main_products = ", ".join(insights.get("main_products", []))
     industry = insights.get("industry", "Your industry")
     ideal_customers = insights.get("ideal_customers", [])
-    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "• Your ideal customers"
+    countries = ", ".join(insights.get("countries_of_operation", []))
+
+    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "• Your best-fit customers"
 
     if "professional" in tone.lower():
         prompt = f"""
@@ -124,8 +129,8 @@ Subject: Quick idea that may support {company_name}
 
 Hello [First Name],
 
-I noticed {company_name} is doing amazing work in {industry}, especially around {main_products}.
-We help teams like yours connect faster with key decision-makers:
+I noticed {company_name} is doing strong work in {industry} and operating across {countries}.
+We support teams like yours connect faster with key decision-makers:
 
 • {customers_bullets}
 
@@ -142,12 +147,12 @@ Subject: Quick idea for {company_name} 🚀
 
 Hi [First Name],
 
-Checked out {company_name} — love the direction you’re moving in {industry}!  
-We help brands like yours speed up outreach to your best-fit decision-makers 👇
+Saw {company_name} expanding in {countries} — love the direction you are growing in {industry}!  
+We help teams like yours speed up outreach to the right decision-makers 👇
 
 • {customers_bullets}
 
-Happy to send a small sample so you can see the match — zero pressure 🙂
+Happy to send a small sample — zero pressure 🙂  
 
 Cheers,  
 Ranjith 🚀
@@ -200,6 +205,11 @@ def analyze_single_url():
             st.markdown("### 🎯 Ideal Audience")
             for a in insights["ideal_audience"]:
                 st.write(f"- {a}")
+
+        if insights.get("countries_of_operation"):
+            st.markdown("### 🌍 Countries of Operation")
+            for c in insights["countries_of_operation"]:
+                st.write(f"- {c}")
 
         st.subheader("1️⃣ Professional Corporate Tone")
         st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
