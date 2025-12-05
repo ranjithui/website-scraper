@@ -99,7 +99,7 @@ Website Content: {text}
     except:
         return ""
 
-# AI Email Generator for Professional, Results, Data pitches (using all main_products)
+# AI Email Generator for Professional, Results, Data, and LinkedIn pitches
 def groq_ai_generate_email(url, text, pitch_type, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     company_name = insights.get("company_name", "This Company")
@@ -109,7 +109,6 @@ def groq_ai_generate_email(url, text, pitch_type, insights):
     ideal_audience = insights.get("ideal_audience", [])
     countries = ", ".join(insights.get("countries_of_operation", []))
 
-    # Format products, customers, and audience for bullets
     products_text = ", ".join(main_products) if main_products else "your services/products"
     customers_bullets = "\n".join(ideal_customers) if ideal_customers else "Your best-fit customers"
     audience_bullets = "\n".join(ideal_audience) if ideal_audience else "Your target audience"
@@ -183,6 +182,23 @@ Would you like a short sample to see the quality for yourself?
 
 Thanks,  
 Ranjith
+"""
+    elif pitch_type.lower() == "linkedin":
+        # Extra-short LinkedIn pitch
+        prompt = f"""
+Return ONLY the below short LinkedIn pitch:
+
+Hi [First Name],
+
+I noticed {company_name} excels in {industry}, offering: {products_text}.  
+
+We help teams connect with:  
+• Ideal Customers: {', '.join(ideal_customers) if ideal_customers else 'Your best-fit customers'}  
+• Ideal Audience: {', '.join(ideal_audience) if ideal_audience else 'Your target audience'}  
+
+Would you like a quick example of how we can help?
+
+— Ranjith
 """
     else:
         return "Invalid pitch type"
@@ -291,12 +307,12 @@ def analyze_bulk():
         for c in insights["countries_of_operation"]:
             st.write(f"- {c}")
 
-    pitch_types = ["Professional", "Results", "Data"]
+    pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
     for pt in pitch_types:
         email_content = groq_ai_generate_email(url, scraped, pt, insights)
         subject, body = parse_email(email_content)
         st.subheader(f"{pt} Pitch")
-        st.markdown(format_pitch_markdown(subject, body))
+        st.markdown(format_pitch_markdown(subject, body) if pt != "LinkedIn" else body)
 
     if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
@@ -329,12 +345,12 @@ def analyze_single():
             for c in insights["countries_of_operation"]:
                 st.write(f"- {c}")
 
-        pitch_types = ["Professional", "Results", "Data"]
+        pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
         for pt in pitch_types:
             email_content = groq_ai_generate_email(url, scraped, pt, insights)
             subject, body = parse_email(email_content)
             st.subheader(f"{pt} Pitch")
-            st.markdown(format_pitch_markdown(subject, body))
+            st.markdown(format_pitch_markdown(subject, body) if pt != "LinkedIn" else body)
 
 ##############################
 ######## MAIN UI #############
