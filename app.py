@@ -7,12 +7,12 @@ import re
 
 st.set_page_config(page_title="Website Outreach AI Agent", layout="wide")
 
-# Load API Key
+# Load API key
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
 
-# Spam Filter Words
+# Smart Spam Filter
 spam_words_map = {
     r"(?i)\bbuy\b": "explore",
     r"(?i)\bbulk\b": "high-volume",
@@ -32,7 +32,7 @@ def smart_filter(text):
         text = re.sub(pattern, replacement, text)
     return text
 
-# Website Scraper
+# Scrape Website Content
 def scrape_website(url):
     try:
         r = requests.get(url, timeout=10)
@@ -43,12 +43,15 @@ def scrape_website(url):
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
-# JSON Extraction
+# Extract JSON Insights
 def extract_json(content):
     try:
         start = content.find("{")
         end = content.rfind("}") + 1
+        if start == -1 or end == -1:
+            return None
         data = json.loads(content[start:end])
+
         defaults = {
             "company_name": "This Company",
             "company_summary": "A growing organization",
@@ -58,58 +61,65 @@ def extract_json(content):
             "industry": "General",
             "countries_of_operation": []
         }
-        for k,v in defaults.items():
-            data.setdefault(k, v)
+        for k, v in defaults.items():
+            if k not in data:
+                data[k] = v
+
         return data
     except:
-        return {
-            "company_name": "This Company",
-            "company_summary": "",
-            "main_products": [],
-            "ideal_customers": [],
-            "ideal_audience": [],
-            "industry": "Unknown",
-            "countries_of_operation": []
-        }
+        return None
 
-# AI - Generate Insights
+# AI for Insights Only
 def groq_ai_generate_insights(url, text):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+
     prompt = f"""
-Extract ONLY the JSON insights:
+You are a business analyst. Extract ONLY JSON insights from the website.
+
+Return in this exact JSON format:
 
 {{
-"company_name": "",
-"company_summary": "",
-"main_products": [],
-"ideal_customers": [],
-"ideal_audience": [],
-"industry": "",
-"countries_of_operation": []
+"company_name": "Company Name",
+"company_summary": "2-3 line summary",
+"main_products": ["service 1", "service 2"],
+"ideal_customers": ["ICP1", "ICP2"],
+"ideal_audience": ["audience1", "audience2"],
+"industry": "best guess industry",
+"countries_of_operation": ["Country1", "Country2"]
 }}
 
-Website URL: {url}
-Content: {text}
+Company URL: {url}
+Website Content: {text}
 """
-    body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
+
+    body = {
+        "model": MODEL_NAME,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3
+    }
+
     try:
         r = requests.post(API_URL, headers=headers, json=body)
-        return r.json()["choices"][0]["message"]["content"]
+        res = r.json()
+        return res["choices"][0]["message"]["content"]
     except:
-        return "{}"
+        return ""
 
-# AI - Generate Email
+# AI for Emails Only
 def groq_ai_generate_email(url, text, tone, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+
     company_name = insights.get("company_name", "This Company")
     industry = insights.get("industry", "your industry")
     ideal_customers = insights.get("ideal_customers", [])
     countries = ", ".join(insights.get("countries_of_operation", []))
 
-    customers_bullets = "\n• " + "\n• ".join(ideal_customers) if ideal_customers else "• Decision-makers in your target market"
+    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "• Your best-fit customers"
 
-    if tone == "Professional":
+    if "professional" in tone.lower():
         prompt = f"""
+Return ONLY the below structured email:
+
 Subject: Quick idea that may support {company_name}
 
 Hello [First Name],
@@ -117,7 +127,7 @@ Hello [First Name],
 I noticed {company_name} is doing strong work in {industry} and operating across {countries}.
 We support teams like yours connect faster with key decision-makers:
 
-{customers_bullets}
+• {customers_bullets}
 
 If it’s useful, I’d be happy to share a short sample — completely optional.
 
@@ -126,14 +136,16 @@ Ranjith
 """
     else:
         prompt = f"""
+Return ONLY the below structured email:
+
 Subject: Quick idea for {company_name} 🚀
 
 Hi [First Name],
 
-Saw {company_name} expanding in {countries}! Love the direction in {industry}.  
-We help teams like yours reach decision-makers faster 👇
+Saw {company_name} expanding in {countries} — love the direction you are growing in {industry}!  
+We help teams like yours speed up outreach to the right decision-makers 👇
 
-{customers_bullets}
+• {customers_bullets}
 
 Happy to send a small sample — zero pressure 🙂  
 
@@ -141,16 +153,23 @@ Cheers,
 Ranjith 🚀
 """
 
-    body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.45}
+    body = {
+        "model": MODEL_NAME,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.55
+    }
+
     try:
         r = requests.post(API_URL, headers=headers, json=body)
-        return smart_filter(r.json()["choices"][0]["message"]["content"])
+        email = r.json()["choices"][0]["message"]["content"]
+        return smart_filter(email)
     except:
         return ""
 
-# Email Parser
+# Parse Email Parts
 def parse_email(content):
-    subject, body = "", ""
+    subject = ""
+    body = ""
     lines = content.splitlines()
     for i, line in enumerate(lines):
         if line.lower().startswith("subject:"):
@@ -159,12 +178,11 @@ def parse_email(content):
             break
     return subject, body
 
-###################################################
 # Single URL Mode
-###################################################
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
-    if st.button("Analyze Website"):
+
+    if st.button("Analyze"):
         scraped = scrape_website(url)
         insights_raw = groq_ai_generate_insights(url, scraped)
         insights = extract_json(insights_raw)
@@ -175,29 +193,30 @@ def analyze_single_url():
         sp, bp = parse_email(prof_email)
         sf, bf = parse_email(friendly_email)
 
+        st.subheader("📌 Company Insights")
         st.json(insights)
 
         if insights.get("ideal_audience"):
             st.markdown("### 🎯 Ideal Audience")
-            for x in insights["ideal_audience"]:
-                st.write(f"- {x}")
+            for a in insights["ideal_audience"]:
+                st.write(f"- {a}")
 
         if insights.get("countries_of_operation"):
             st.markdown("### 🌍 Countries of Operation")
-            for x in insights["countries_of_operation"]:
-                st.write(f"- {x}")
+            for c in insights["countries_of_operation"]:
+                st.write(f"- {c}")
 
-        st.subheader("Professional")
-        st.text_area("Email 1", f"Subject: {sp}\n\n{bp}", height=200)
-        st.subheader("Friendly")
-        st.text_area("Email 2", f"Subject: {sf}\n\n{bf}", height=200)
+        st.subheader("1️⃣ Professional Corporate Tone")
+        st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
 
-###################################################
-# Bulk CSV Mode
-###################################################
+        st.subheader("2️⃣ Friendly Conversational Tone")
+        st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
+
+# Bulk CSV One-by-One Mode
 def analyze_bulk():
     file = st.file_uploader("Upload CSV with 'Website' column", type=["csv"])
-    if not file:
+
+    if file is None:
         return
 
     df = pd.read_csv(file)
@@ -209,18 +228,14 @@ def analyze_bulk():
     if "bulk_index" not in st.session_state:
         st.session_state.bulk_index = 0
 
-    i = st.session_state.bulk_index
+    index = st.session_state.bulk_index
 
-    if i >= len(df):
-        st.success("🎉 All Websites Processed!")
+    if index >= len(df):
+        st.success("🎉 All URLs processed!")
         return
 
-    url = df.loc[i, "Website"]
-    st.info(f"Processing {i+1}/{len(df)} → {url}")
-
-    # ⭐ Show full row data
-    st.markdown("### 📄 Original Row Data")
-    st.table(df.loc[[i]])
+    url = df.loc[index, "Website"]
+    st.info(f"Processing {index+1}/{len(df)} → {url}")
 
     scraped = scrape_website(url)
     insights_raw = groq_ai_generate_insights(url, scraped)
@@ -232,22 +247,30 @@ def analyze_bulk():
     sp, bp = parse_email(prof_email)
     sf, bf = parse_email(friendly_email)
 
-    st.subheader("📌 Insights")
+    st.subheader("📌 Company Insights")
     st.json(insights)
 
-    st.subheader("📧 Professional Email")
-    st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=200)
+    if insights.get("ideal_audience"):
+        st.markdown("### 🎯 Ideal Audience")
+        for a in insights["ideal_audience"]:
+            st.write(f"- {a}")
 
-    st.subheader("😄 Friendly Email")
-    st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=200)
+    if insights.get("countries_of_operation"):
+        st.markdown("### 🌍 Countries of Operation")
+        for c in insights["countries_of_operation"]:
+            st.write(f"- {c}")
 
-    if st.button("Next ➜"):
+    st.subheader("1️⃣ Professional Tone Email")
+    st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
+
+    st.subheader("2️⃣ Friendly Tone Email")
+    st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
+
+    if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
         st.rerun()
 
-###################################################
 # UI Layout
-###################################################
 st.title("🌐 Website Outreach AI Agent (Groq)")
 
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
