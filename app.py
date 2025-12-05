@@ -205,17 +205,26 @@ def analyze_single_url():
         st.subheader("2️⃣ Friendly Conversational Tone")
         st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
 
-# Bulk CSV One-by-One Mode
+# Bulk CSV or Excel One-by-One Mode
 def analyze_bulk():
-    file = st.file_uploader("Upload CSV with 'Website' column", type=["csv"])
+
+    file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
 
     if file is None:
         return
 
-    df = pd.read_csv(file)
+    # Encoding fix + Excel support
+    file_name = file.name.lower()
+    if file_name.endswith(".csv"):
+        try:
+            df = pd.read_csv(file, encoding="utf-8")
+        except UnicodeDecodeError:
+            df = pd.read_csv(file, encoding="latin1", errors="ignore")
+    else:
+        df = pd.read_excel(file, engine="openpyxl")
 
     if "Website" not in df.columns:
-        st.error("CSV must contain 'Website' column")
+        st.error("CSV/Excel must contain 'Website' column")
         return
 
     if "bulk_index" not in st.session_state:
@@ -230,9 +239,9 @@ def analyze_bulk():
     url = df.loc[index, "Website"]
     st.info(f"Processing {index+1}/{len(df)} → {url}")
 
-    # ➜ NEW: Show full row dataset
+    # Show full row
     st.markdown("### 📌 CSV Row Data")
-    st.table(df.loc[[index]])  # Shows all values from the selected row
+    st.table(df.loc[[index]])
 
     scraped = scrape_website(url)
     insights_raw = groq_ai_generate_insights(url, scraped)
