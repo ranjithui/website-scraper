@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
@@ -32,6 +32,7 @@ def smart_filter(text):
         text = re.sub(pattern, replacement, text)
     return text
 
+
 # Scrape Website Content
 def scrape_website(url):
     try:
@@ -44,6 +45,7 @@ def scrape_website(url):
     except Exception as e:
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
+
 
 # Extract JSON
 def extract_json(content):
@@ -71,6 +73,7 @@ def extract_json(content):
     except:
         return None
 
+
 # AI Insights Only
 def groq_ai_generate_insights(url, text):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
@@ -92,16 +95,13 @@ Return in this exact JSON format:
 Company URL: {url}
 Website Content: {text}
 """
-    body = {
-        "model": MODEL_NAME,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.3
-    }
+    body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
     try:
         r = requests.post(API_URL, headers=headers, json=body)
         return r.json()["choices"][0]["message"]["content"]
     except:
         return ""
+
 
 # AI Email Generator
 def groq_ai_generate_email(url, text, tone, insights):
@@ -159,6 +159,7 @@ Ranjith 🚀
     except:
         return ""
 
+
 # Email parser
 def parse_email(content):
     subject = ""
@@ -172,7 +173,9 @@ def parse_email(content):
     return subject, body
 
 
-# Bulk Mode (with index reset fix)
+##############################
+##### BULK UPLOAD MODE #######
+##############################
 def analyze_bulk():
 
     file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
@@ -180,7 +183,6 @@ def analyze_bulk():
     if file is None:
         return
 
-    # Reset index when new file uploaded
     if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != file.name:
         st.session_state.bulk_index = 0
         st.session_state.last_uploaded_file = file.name
@@ -210,7 +212,6 @@ def analyze_bulk():
     url = df.loc[index, "Website"]
     st.info(f"Processing {index+1}/{len(df)} → {url}")
 
-    # Only showing these 4 fields (unchanged)
     first_name = df.loc[index].get("First Name", "N/A")
     last_name = df.loc[index].get("Last Name", "N/A")
     company_name_csv = df.loc[index].get("Company Name", "N/A")
@@ -246,18 +247,66 @@ def analyze_bulk():
             st.write(f"- {c}")
 
     st.subheader("1️⃣ Professional Tone Email")
-    st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
+    st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=215)
 
     st.subheader("2️⃣ Friendly Tone Email")
-    st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
+    st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=215)
 
     if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
         st.rerun()
 
-# UI
-st.title("🌐 Website Outreach AI Agent (Groq)")
-mode = st.radio("Select Mode", ["Bulk CSV Upload"])
 
-if mode == "Bulk CSV Upload":
+##############################
+##### SINGLE URL MODE ########
+##############################
+def analyze_single():
+
+    url = st.text_input("Enter Website URL")
+
+    if st.button("Analyze Website"):
+        scraped = scrape_website(url)
+        insights_raw = groq_ai_generate_insights(url, scraped)
+        insights = extract_json(insights_raw)
+
+        if insights is None:
+            st.error("⚠️ No usable insights found")
+            return
+
+        prof_email = groq_ai_generate_email(url, scraped, "Professional", insights)
+        friendly_email = groq_ai_generate_email(url, scraped, "Friendly", insights)
+
+        sp, bp = parse_email(prof_email)
+        sf, bf = parse_email(friendly_email)
+
+        st.subheader("📌 Company Insights")
+        st.json(insights)
+
+        if insights.get("ideal_audience"):
+            st.markdown("### 🎯 Ideal Audience")
+            for a in insights["ideal_audience"]:
+                st.write(f"- {a}")
+
+        if insights.get("countries_of_operation"):
+            st.markdown("### 🌍 Countries of Operation")
+            for c in insights["countries_of_operation"]:
+                st.write(f"- {c}")
+
+        st.subheader("1️⃣ Professional Tone Email")
+        st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=215)
+
+        st.subheader("2️⃣ Friendly Tone Email")
+        st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=215)
+
+
+##############################
+######## MAIN UI #############
+##############################
+st.title("🌐 Website Outreach AI Agent (Groq)")
+
+mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
+
+if mode == "Single URL":
+    analyze_single()
+else:
     analyze_bulk()
