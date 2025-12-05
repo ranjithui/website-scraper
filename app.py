@@ -109,8 +109,8 @@ def groq_ai_generate_email(url, text, pitch_type, insights):
     countries = ", ".join(insights.get("countries_of_operation", []))
 
     # Format ideal_customers and ideal_audience for bullets
-    customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "• Your best-fit customers"
-    audience_bullets = "\n• ".join(ideal_audience) if ideal_audience else "• Your target audience"
+    customers_bullets = "\n".join(ideal_customers) if ideal_customers else "Your best-fit customers"
+    audience_bullets = "\n".join(ideal_audience) if ideal_audience else "Your target audience"
 
     if pitch_type.lower() == "professional":
         prompt = f"""
@@ -123,8 +123,13 @@ Hi [First Name],
 I noticed {company_name} is doing excellent work in {industry} across {countries}.  
 We help teams like yours connect faster with the decision-makers who matter most:
 
-• Ideal Customers: {customers_bullets}
-• Ideal Audience: {audience_bullets}
+• Ideal Customers:
+
+{customers_bullets}
+
+• Ideal Audience:
+
+{audience_bullets}
 
 Would you like a short sample to see how we can help you engage these key contacts? It’s completely optional.
 
@@ -141,8 +146,13 @@ Hello [First Name],
 
 Companies in {industry} using our database have seen measurable improvements connecting with the decision-makers who matter:
 
-• Ideal Customers: {customers_bullets}
-• Ideal Audience: {audience_bullets}
+• Ideal Customers:
+
+{customers_bullets}
+
+• Ideal Audience:
+
+{audience_bullets}
 
 I’d be happy to share a tailored example for {company_name}.
 
@@ -159,8 +169,13 @@ Hi [First Name],
 
 Our curated database ensures you reach only verified decision-makers relevant to {industry}:
 
-• Ideal Customers: {customers_bullets}
-• Ideal Audience: {audience_bullets}
+• Ideal Customers:
+
+{customers_bullets}
+
+• Ideal Audience:
+
+{audience_bullets}
 
 Would you like a short sample to see the quality for yourself?
 
@@ -191,18 +206,23 @@ def parse_email(content):
             break
     return subject, body
 
-# Function to format email nicely with Markdown
+# Function to format pitch with line-break bullet alignment
 def format_pitch_markdown(subject, body):
     formatted = f"**Subject:** {subject}\n\n"
     lines = body.splitlines()
-    for line in lines:
-        line = line.strip()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
         if line.startswith("• Ideal Customers:") or line.startswith("• Ideal Audience:"):
-            formatted += f"**{line}**\n"
-        elif line.startswith("•"):
-            formatted += f"{line}\n"
+            formatted += f"**{line}**\n\n"
+            i += 1
+            while i < len(lines) and lines[i].strip() and not lines[i].startswith("• Ideal"):
+                formatted += f"{lines[i].strip()}\n\n"
+                i += 1
+            continue
         elif line:
             formatted += f"{line}\n\n"
+        i += 1
     return formatted
 
 ##############################
@@ -210,7 +230,6 @@ def format_pitch_markdown(subject, body):
 ##############################
 def analyze_bulk():
     file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
-
     if file is None:
         return
 
@@ -235,7 +254,6 @@ def analyze_bulk():
         st.session_state.bulk_index = 0
 
     index = st.session_state.bulk_index
-
     if index >= len(df):
         st.success("🎉 All URLs processed!")
         return
@@ -271,7 +289,6 @@ def analyze_bulk():
         for c in insights["countries_of_operation"]:
             st.write(f"- {c}")
 
-    # Generate only Professional, Results, Data pitches
     pitch_types = ["Professional", "Results", "Data"]
     for pt in pitch_types:
         email_content = groq_ai_generate_email(url, scraped, pt, insights)
@@ -288,7 +305,6 @@ def analyze_bulk():
 ##############################
 def analyze_single():
     url = st.text_input("Enter Website URL")
-
     if st.button("Analyze Website"):
         scraped = scrape_website(url)
         insights_raw = groq_ai_generate_insights(url, scraped)
@@ -311,7 +327,6 @@ def analyze_single():
             for c in insights["countries_of_operation"]:
                 st.write(f"- {c}")
 
-        # Generate only Professional, Results, Data pitches
         pitch_types = ["Professional", "Results", "Data"]
         for pt in pitch_types:
             email_content = groq_ai_generate_email(url, scraped, pt, insights)
@@ -323,7 +338,6 @@ def analyze_single():
 ######## MAIN UI #############
 ##############################
 st.title("🌐 Website Outreach AI Agent (Groq)")
-
 mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
 
 if mode == "Single URL":
