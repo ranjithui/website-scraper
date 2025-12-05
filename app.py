@@ -99,16 +99,18 @@ Website Content: {text}
     except:
         return ""
 
-# AI Email Generator for Professional, Results, Data pitches
+# AI Email Generator for Professional, Results, Data pitches (using all main_products)
 def groq_ai_generate_email(url, text, pitch_type, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     company_name = insights.get("company_name", "This Company")
     industry = insights.get("industry", "your industry")
+    main_products = insights.get("main_products", [])
     ideal_customers = insights.get("ideal_customers", [])
     ideal_audience = insights.get("ideal_audience", [])
     countries = ", ".join(insights.get("countries_of_operation", []))
 
-    # Format ideal_customers and ideal_audience for bullets
+    # Format products, customers, and audience for bullets
+    products_text = ", ".join(main_products) if main_products else "your services/products"
     customers_bullets = "\n".join(ideal_customers) if ideal_customers else "Your best-fit customers"
     audience_bullets = "\n".join(ideal_audience) if ideal_audience else "Your target audience"
 
@@ -120,7 +122,7 @@ Subject: Helping {company_name} reach the right decision-makers
 
 Hi [First Name],
 
-I noticed {company_name} is doing excellent work in {industry} across {countries}.  
+I noticed {company_name} is doing excellent work in {industry}, offering: {products_text}, across {countries}.  
 We help teams like yours connect faster with the decision-makers who matter most:
 
 • Ideal Customers:
@@ -144,7 +146,7 @@ Subject: Boost {company_name}'s outreach results
 
 Hello [First Name],
 
-Companies in {industry} using our database have seen measurable improvements connecting with the decision-makers who matter:
+Companies in {industry} offering {products_text} using our database have seen measurable improvements connecting with the decision-makers who matter:
 
 • Ideal Customers:
 
@@ -167,7 +169,7 @@ Subject: High-quality contacts for {company_name}
 
 Hi [First Name],
 
-Our curated database ensures you reach only verified decision-makers relevant to {industry}:
+Our curated database ensures you reach only verified decision-makers relevant to {industry} and all its offerings: {products_text}.
 
 • Ideal Customers:
 
