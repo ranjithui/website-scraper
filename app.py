@@ -171,27 +171,19 @@ def parse_email(content):
             break
     return subject, body
 
-# Single URL Mode
-def analyze_single_url():
-    url = st.text_input("Enter Website URL:")
-    if st.button("Analyze"):
-        scraped = scrape_website(url)
-        insights_raw = groq_ai_generate_insights(url, scraped)
-        insights = extract_json(insights_raw)
 
-        prof_email = groq_ai_generate_email(url, scraped, "Professional", insights)
-        friendly_email = groq_ai_generate_email(url, scraped, "Friendly", insights)
-
-        st.subheader("📌 Company Insights")
-        st.json(insights)
-
-# Bulk Mode
+# Bulk Mode (with index reset fix)
 def analyze_bulk():
 
     file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
 
     if file is None:
         return
+
+    # Reset index when new file uploaded
+    if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != file.name:
+        st.session_state.bulk_index = 0
+        st.session_state.last_uploaded_file = file.name
 
     file_name = file.name.lower()
     if file_name.endswith(".csv"):
@@ -218,7 +210,7 @@ def analyze_bulk():
     url = df.loc[index, "Website"]
     st.info(f"Processing {index+1}/{len(df)} → {url}")
 
-    # ✔ Show only required 4 fields
+    # Only showing these 4 fields (unchanged)
     first_name = df.loc[index].get("First Name", "N/A")
     last_name = df.loc[index].get("Last Name", "N/A")
     company_name_csv = df.loc[index].get("Company Name", "N/A")
@@ -263,12 +255,9 @@ def analyze_bulk():
         st.session_state.bulk_index += 1
         st.rerun()
 
-# UI Layout
+# UI
 st.title("🌐 Website Outreach AI Agent (Groq)")
+mode = st.radio("Select Mode", ["Bulk CSV Upload"])
 
-mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
-
-if mode == "Single URL":
-    analyze_single_url()
-else:
+if mode == "Bulk CSV Upload":
     analyze_bulk()
