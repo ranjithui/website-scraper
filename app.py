@@ -191,11 +191,24 @@ def parse_email(content):
             break
     return subject, body
 
+# Function to format email nicely with Markdown
+def format_pitch_markdown(subject, body):
+    formatted = f"**Subject:** {subject}\n\n"
+    lines = body.splitlines()
+    for line in lines:
+        line = line.strip()
+        if line.startswith("• Ideal Customers:") or line.startswith("• Ideal Audience:"):
+            formatted += f"**{line}**\n"
+        elif line.startswith("•"):
+            formatted += f"{line}\n"
+        elif line:
+            formatted += f"{line}\n\n"
+    return formatted
+
 ##############################
 ##### BULK UPLOAD MODE #######
 ##############################
 def analyze_bulk():
-
     file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
 
     if file is None:
@@ -264,7 +277,7 @@ def analyze_bulk():
         email_content = groq_ai_generate_email(url, scraped, pt, insights)
         subject, body = parse_email(email_content)
         st.subheader(f"{pt} Pitch")
-        st.text_area(pt, f"Subject: {subject}\n\n{body}", height=215)
+        st.markdown(format_pitch_markdown(subject, body))
 
     if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
@@ -274,7 +287,6 @@ def analyze_bulk():
 ##### SINGLE URL MODE ########
 ##############################
 def analyze_single():
-
     url = st.text_input("Enter Website URL")
 
     if st.button("Analyze Website"):
@@ -305,7 +317,7 @@ def analyze_single():
             email_content = groq_ai_generate_email(url, scraped, pt, insights)
             subject, body = parse_email(email_content)
             st.subheader(f"{pt} Pitch")
-            st.text_area(pt, f"Subject: {subject}\n\n{body}", height=215)
+            st.markdown(format_pitch_markdown(subject, body))
 
 ##############################
 ######## MAIN UI #############
