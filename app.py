@@ -99,7 +99,7 @@ Website Content: {text}
     except:
         return ""
 
-# AI Email Generator for selected pitch types with ideal_customers + ideal_audience
+# AI Email Generator for Professional, Results, Data pitches
 def groq_ai_generate_email(url, text, pitch_type, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     company_name = insights.get("company_name", "This Company")
@@ -165,61 +165,6 @@ Our curated database ensures you reach only verified decision-makers relevant to
 Would you like a short sample to see the quality for yourself?
 
 Thanks,  
-Ranjith
-"""
-    # Other pitch types remain the same
-    elif pitch_type.lower() == "friendly":
-        prompt = f"""
-Return ONLY the below email:
-
-Subject: Quick idea for {company_name} 🚀
-
-Hi [First Name],
-
-Saw {company_name} expanding in {countries} — love the direction you are growing in {industry}!  
-We help teams like yours speed up outreach to the right decision-makers 👇
-
-• {customers_bullets}
-
-Happy to send a small sample — zero pressure 🙂  
-
-Cheers,  
-Ranjith 🚀
-"""
-    elif pitch_type.lower() == "scarcity":
-        prompt = f"""
-Return ONLY the below email:
-
-Subject: Limited opportunity for {company_name}
-
-Hi [First Name],
-
-We’re offering a select few companies in {industry} early access to our targeted contacts database.
-This is limited to ensure quality and focus:
-
-• {customers_bullets}
-
-Let me know if you want in before spots fill up.
-
-Best,  
-Ranjith
-"""
-    elif pitch_type.lower() == "founder":
-        prompt = f"""
-Return ONLY the below email:
-
-Subject: Founder to Founder: Idea for {company_name}
-
-Hi [First Name],
-
-As a fellow founder, I understand how crucial it is to connect with the right people.  
-We’ve helped companies like {company_name} in {industry} reach key decision-makers efficiently:
-
-• {customers_bullets}
-
-Would love to share a quick sample if helpful.
-
-Best regards,  
 Ranjith
 """
     else:
@@ -313,8 +258,8 @@ def analyze_bulk():
         for c in insights["countries_of_operation"]:
             st.write(f"- {c}")
 
-    # Generate all six pitch types
-    pitch_types = ["Professional", "Friendly", "Scarcity", "Results", "Data", "Founder"]
+    # Generate only Professional, Results, Data pitches
+    pitch_types = ["Professional", "Results", "Data"]
     for pt in pitch_types:
         email_content = groq_ai_generate_email(url, scraped, pt, insights)
         subject, body = parse_email(email_content)
@@ -354,7 +299,8 @@ def analyze_single():
             for c in insights["countries_of_operation"]:
                 st.write(f"- {c}")
 
-        pitch_types = ["Professional", "Friendly", "Scarcity", "Results", "Data", "Founder"]
+        # Generate only Professional, Results, Data pitches
+        pitch_types = ["Professional", "Results", "Data"]
         for pt in pitch_types:
             email_content = groq_ai_generate_email(url, scraped, pt, insights)
             subject, body = parse_email(email_content)
