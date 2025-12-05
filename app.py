@@ -35,6 +35,8 @@ def smart_filter(text):
 # Scrape Website Content
 def scrape_website(url):
     try:
+        if not url.startswith("http"):
+            url = "https://" + url
         r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
@@ -43,7 +45,7 @@ def scrape_website(url):
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
 
-# Extract JSON Insights
+# Extract JSON
 def extract_json(content):
     try:
         start = content.find("{")
@@ -69,11 +71,11 @@ def extract_json(content):
     except:
         return None
 
-# AI for Insights Only
+# AI Insights Only
 def groq_ai_generate_insights(url, text):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     prompt = f"""
-You are a business analyst. Extract ONLY JSON insights from the website.
+You are a business analyst. Extract ONLY JSON insights.
 
 Return in this exact JSON format:
 
@@ -97,12 +99,11 @@ Website Content: {text}
     }
     try:
         r = requests.post(API_URL, headers=headers, json=body)
-        res = r.json()
-        return res["choices"][0]["message"]["content"]
+        return r.json()["choices"][0]["message"]["content"]
     except:
         return ""
 
-# AI for Emails Only
+# AI Email Generator
 def groq_ai_generate_email(url, text, tone, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     company_name = insights.get("company_name", "This Company")
@@ -114,7 +115,7 @@ def groq_ai_generate_email(url, text, tone, insights):
 
     if "professional" in tone.lower():
         prompt = f"""
-Return ONLY the below structured email:
+Return ONLY the below email:
 
 Subject: Quick idea that may support {company_name}
 
@@ -132,7 +133,7 @@ Ranjith
 """
     else:
         prompt = f"""
-Return ONLY the below structured email:
+Return ONLY the below email:
 
 Subject: Quick idea for {company_name} 🚀
 
@@ -149,11 +150,8 @@ Cheers,
 Ranjith 🚀
 """
 
-    body = {
-        "model": MODEL_NAME,
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.55
-    }
+    body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.55}
+
     try:
         r = requests.post(API_URL, headers=headers, json=body)
         email = r.json()["choices"][0]["message"]["content"]
@@ -161,6 +159,7 @@ Ranjith 🚀
     except:
         return ""
 
+# Email parser
 def parse_email(content):
     subject = ""
     body = ""
@@ -183,29 +182,10 @@ def analyze_single_url():
         prof_email = groq_ai_generate_email(url, scraped, "Professional", insights)
         friendly_email = groq_ai_generate_email(url, scraped, "Friendly", insights)
 
-        sp, bp = parse_email(prof_email)
-        sf, bf = parse_email(friendly_email)
-
         st.subheader("📌 Company Insights")
         st.json(insights)
 
-        if insights.get("ideal_audience"):
-            st.markdown("### 🎯 Ideal Audience")
-            for a in insights["ideal_audience"]:
-                st.write(f"- {a}")
-
-        if insights.get("countries_of_operation"):
-            st.markdown("### 🌍 Countries of Operation")
-            for c in insights["countries_of_operation"]:
-                st.write(f"- {c}")
-
-        st.subheader("1️⃣ Professional Corporate Tone")
-        st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=220)
-
-        st.subheader("2️⃣ Friendly Conversational Tone")
-        st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=220)
-
-# Bulk CSV or Excel One-by-One Mode
+# Bulk Mode
 def analyze_bulk():
 
     file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
@@ -213,7 +193,6 @@ def analyze_bulk():
     if file is None:
         return
 
-    # Encoding fix + Excel support
     file_name = file.name.lower()
     if file_name.endswith(".csv"):
         try:
@@ -239,9 +218,17 @@ def analyze_bulk():
     url = df.loc[index, "Website"]
     st.info(f"Processing {index+1}/{len(df)} → {url}")
 
-    # Show full row
-    st.markdown("### 📌 CSV Row Data")
-    st.table(df.loc[[index]])
+    # ✔ Show only required 4 fields
+    first_name = df.loc[index].get("First Name", "N/A")
+    last_name = df.loc[index].get("Last Name", "N/A")
+    company_name_csv = df.loc[index].get("Company Name", "N/A")
+    email = df.loc[index].get("Email", "N/A")
+
+    st.subheader("📌 Contact Details")
+    st.write(f"**First Name:** {first_name}")
+    st.write(f"**Last Name:** {last_name}")
+    st.write(f"**Company Name:** {company_name_csv}")
+    st.write(f"**Email:** {email}")
 
     scraped = scrape_website(url)
     insights_raw = groq_ai_generate_insights(url, scraped)
