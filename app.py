@@ -99,33 +99,75 @@ Website Content: {text}
     except:
         return ""
 
-# AI Email Generator for multiple pitch types
+# AI Email Generator for selected pitch types with ideal_customers + ideal_audience
 def groq_ai_generate_email(url, text, pitch_type, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     company_name = insights.get("company_name", "This Company")
     industry = insights.get("industry", "your industry")
     ideal_customers = insights.get("ideal_customers", [])
+    ideal_audience = insights.get("ideal_audience", [])
     countries = ", ".join(insights.get("countries_of_operation", []))
+
+    # Format ideal_customers and ideal_audience for bullets
     customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "• Your best-fit customers"
+    audience_bullets = "\n• ".join(ideal_audience) if ideal_audience else "• Your target audience"
 
     if pitch_type.lower() == "professional":
         prompt = f"""
 Return ONLY the below email:
 
-Subject: Quick idea that may support {company_name}
+Subject: Helping {company_name} reach the right decision-makers
+
+Hi [First Name],
+
+I noticed {company_name} is doing excellent work in {industry} across {countries}.  
+We help teams like yours connect faster with the decision-makers who matter most:
+
+• Ideal Customers: {customers_bullets}
+• Ideal Audience: {audience_bullets}
+
+Would you like a short sample to see how we can help you engage these key contacts? It’s completely optional.
+
+Regards,  
+Ranjith
+"""
+    elif pitch_type.lower() == "results":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: Boost {company_name}'s outreach results
 
 Hello [First Name],
 
-I noticed {company_name} is doing strong work in {industry} and operating across {countries}.
-We support teams like yours connect faster with key decision-makers:
+Companies in {industry} using our database have seen measurable improvements connecting with the decision-makers who matter:
 
-• {customers_bullets}
+• Ideal Customers: {customers_bullets}
+• Ideal Audience: {audience_bullets}
 
-If it’s useful, I’d be happy to share a short sample — completely optional.
+I’d be happy to share a tailored example for {company_name}.
 
-Regards,
+Regards,  
 Ranjith
 """
+    elif pitch_type.lower() == "data":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: High-quality contacts for {company_name}
+
+Hi [First Name],
+
+Our curated database ensures you reach only verified decision-makers relevant to {industry}:
+
+• Ideal Customers: {customers_bullets}
+• Ideal Audience: {audience_bullets}
+
+Would you like a short sample to see the quality for yourself?
+
+Thanks,  
+Ranjith
+"""
+    # Other pitch types remain the same
     elif pitch_type.lower() == "friendly":
         prompt = f"""
 Return ONLY the below email:
@@ -160,40 +202,6 @@ This is limited to ensure quality and focus:
 Let me know if you want in before spots fill up.
 
 Best,  
-Ranjith
-"""
-    elif pitch_type.lower() == "results":
-        prompt = f"""
-Return ONLY the below email:
-
-Subject: Boost {company_name}'s outreach results
-
-Hello [First Name],
-
-Companies in {industry} using our database have seen measurable improvements in connecting with key decision-makers:
-
-• {customers_bullets}
-
-I’d be happy to share a tailored example for {company_name}.
-
-Regards,  
-Ranjith
-"""
-    elif pitch_type.lower() == "data":
-        prompt = f"""
-Return ONLY the below email:
-
-Subject: High-quality contacts for {company_name}
-
-Hi [First Name],
-
-Our curated database ensures you reach only verified decision-makers relevant to {industry}:
-
-• {customers_bullets}
-
-Would you like a small sample to see the quality for yourself?
-
-Thanks,  
 Ranjith
 """
     elif pitch_type.lower() == "founder":
