@@ -32,7 +32,6 @@ def smart_filter(text):
         text = re.sub(pattern, replacement, text)
     return text
 
-
 # Scrape Website Content
 def scrape_website(url):
     try:
@@ -45,7 +44,6 @@ def scrape_website(url):
     except Exception as e:
         st.warning(f"Failed to scrape {url}: {e}")
         return ""
-
 
 # Extract JSON
 def extract_json(content):
@@ -72,7 +70,6 @@ def extract_json(content):
         return data
     except:
         return None
-
 
 # AI Insights Only
 def groq_ai_generate_insights(url, text):
@@ -102,18 +99,16 @@ Website Content: {text}
     except:
         return ""
 
-
-# AI Email Generator
-def groq_ai_generate_email(url, text, tone, insights):
+# AI Email Generator for multiple pitch types
+def groq_ai_generate_email(url, text, pitch_type, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     company_name = insights.get("company_name", "This Company")
     industry = insights.get("industry", "your industry")
     ideal_customers = insights.get("ideal_customers", [])
     countries = ", ".join(insights.get("countries_of_operation", []))
-
     customers_bullets = "\n• ".join(ideal_customers) if ideal_customers else "• Your best-fit customers"
 
-    if "professional" in tone.lower():
+    if pitch_type.lower() == "professional":
         prompt = f"""
 Return ONLY the below email:
 
@@ -131,7 +126,7 @@ If it’s useful, I’d be happy to share a short sample — completely optional
 Regards,
 Ranjith
 """
-    else:
+    elif pitch_type.lower() == "friendly":
         prompt = f"""
 Return ONLY the below email:
 
@@ -149,6 +144,78 @@ Happy to send a small sample — zero pressure 🙂
 Cheers,  
 Ranjith 🚀
 """
+    elif pitch_type.lower() == "scarcity":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: Limited opportunity for {company_name}
+
+Hi [First Name],
+
+We’re offering a select few companies in {industry} early access to our targeted contacts database.
+This is limited to ensure quality and focus:
+
+• {customers_bullets}
+
+Let me know if you want in before spots fill up.
+
+Best,  
+Ranjith
+"""
+    elif pitch_type.lower() == "results":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: Boost {company_name}'s outreach results
+
+Hello [First Name],
+
+Companies in {industry} using our database have seen measurable improvements in connecting with key decision-makers:
+
+• {customers_bullets}
+
+I’d be happy to share a tailored example for {company_name}.
+
+Regards,  
+Ranjith
+"""
+    elif pitch_type.lower() == "data":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: High-quality contacts for {company_name}
+
+Hi [First Name],
+
+Our curated database ensures you reach only verified decision-makers relevant to {industry}:
+
+• {customers_bullets}
+
+Would you like a small sample to see the quality for yourself?
+
+Thanks,  
+Ranjith
+"""
+    elif pitch_type.lower() == "founder":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: Founder to Founder: Idea for {company_name}
+
+Hi [First Name],
+
+As a fellow founder, I understand how crucial it is to connect with the right people.  
+We’ve helped companies like {company_name} in {industry} reach key decision-makers efficiently:
+
+• {customers_bullets}
+
+Would love to share a quick sample if helpful.
+
+Best regards,  
+Ranjith
+"""
+    else:
+        return "Invalid pitch type"
 
     body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.55}
 
@@ -158,7 +225,6 @@ Ranjith 🚀
         return smart_filter(email)
     except:
         return ""
-
 
 # Email parser
 def parse_email(content):
@@ -171,7 +237,6 @@ def parse_email(content):
             body = "\n".join(lines[i+1:]).strip()
             break
     return subject, body
-
 
 ##############################
 ##### BULK UPLOAD MODE #######
@@ -227,12 +292,6 @@ def analyze_bulk():
     insights_raw = groq_ai_generate_insights(url, scraped)
     insights = extract_json(insights_raw)
 
-    prof_email = groq_ai_generate_email(url, scraped, "Professional", insights)
-    friendly_email = groq_ai_generate_email(url, scraped, "Friendly", insights)
-
-    sp, bp = parse_email(prof_email)
-    sf, bf = parse_email(friendly_email)
-
     st.subheader("📌 Company Insights")
     st.json(insights)
 
@@ -246,16 +305,17 @@ def analyze_bulk():
         for c in insights["countries_of_operation"]:
             st.write(f"- {c}")
 
-    st.subheader("1️⃣ Professional Tone Email")
-    st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=215)
-
-    st.subheader("2️⃣ Friendly Tone Email")
-    st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=215)
+    # Generate all six pitch types
+    pitch_types = ["Professional", "Friendly", "Scarcity", "Results", "Data", "Founder"]
+    for pt in pitch_types:
+        email_content = groq_ai_generate_email(url, scraped, pt, insights)
+        subject, body = parse_email(email_content)
+        st.subheader(f"{pt} Pitch")
+        st.text_area(pt, f"Subject: {subject}\n\n{body}", height=215)
 
     if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
         st.rerun()
-
 
 ##############################
 ##### SINGLE URL MODE ########
@@ -273,12 +333,6 @@ def analyze_single():
             st.error("⚠️ No usable insights found")
             return
 
-        prof_email = groq_ai_generate_email(url, scraped, "Professional", insights)
-        friendly_email = groq_ai_generate_email(url, scraped, "Friendly", insights)
-
-        sp, bp = parse_email(prof_email)
-        sf, bf = parse_email(friendly_email)
-
         st.subheader("📌 Company Insights")
         st.json(insights)
 
@@ -292,12 +346,12 @@ def analyze_single():
             for c in insights["countries_of_operation"]:
                 st.write(f"- {c}")
 
-        st.subheader("1️⃣ Professional Tone Email")
-        st.text_area("Professional", f"Subject: {sp}\n\n{bp}", height=215)
-
-        st.subheader("2️⃣ Friendly Tone Email")
-        st.text_area("Friendly", f"Subject: {sf}\n\n{bf}", height=215)
-
+        pitch_types = ["Professional", "Friendly", "Scarcity", "Results", "Data", "Founder"]
+        for pt in pitch_types:
+            email_content = groq_ai_generate_email(url, scraped, pt, insights)
+            subject, body = parse_email(email_content)
+            st.subheader(f"{pt} Pitch")
+            st.text_area(pt, f"Subject: {subject}\n\n{body}", height=215)
 
 ##############################
 ######## MAIN UI #############
