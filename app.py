@@ -72,7 +72,6 @@ def extract_json(content):
 # AI for Insights Only
 def groq_ai_generate_insights(url, text):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-
     prompt = f"""
 You are a business analyst. Extract ONLY JSON insights from the website.
 
@@ -91,13 +90,11 @@ Return in this exact JSON format:
 Company URL: {url}
 Website Content: {text}
 """
-
     body = {
         "model": MODEL_NAME,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.3
     }
-
     try:
         r = requests.post(API_URL, headers=headers, json=body)
         res = r.json()
@@ -108,7 +105,6 @@ Website Content: {text}
 # AI for Emails Only
 def groq_ai_generate_email(url, text, tone, insights):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-
     company_name = insights.get("company_name", "This Company")
     industry = insights.get("industry", "your industry")
     ideal_customers = insights.get("ideal_customers", [])
@@ -158,7 +154,6 @@ Ranjith 🚀
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.55
     }
-
     try:
         r = requests.post(API_URL, headers=headers, json=body)
         email = r.json()["choices"][0]["message"]["content"]
@@ -166,7 +161,6 @@ Ranjith 🚀
     except:
         return ""
 
-# Parse Email Parts
 def parse_email(content):
     subject = ""
     body = ""
@@ -181,7 +175,6 @@ def parse_email(content):
 # Single URL Mode
 def analyze_single_url():
     url = st.text_input("Enter Website URL:")
-
     if st.button("Analyze"):
         scraped = scrape_website(url)
         insights_raw = groq_ai_generate_insights(url, scraped)
@@ -236,6 +229,10 @@ def analyze_bulk():
 
     url = df.loc[index, "Website"]
     st.info(f"Processing {index+1}/{len(df)} → {url}")
+
+    # ➜ NEW: Show full row dataset
+    st.markdown("### 📌 CSV Row Data")
+    st.table(df.loc[[index]])  # Shows all values from the selected row
 
     scraped = scrape_website(url)
     insights_raw = groq_ai_generate_insights(url, scraped)
