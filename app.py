@@ -184,7 +184,6 @@ Thanks,
 Ranjith
 """
     elif pitch_type.lower() == "linkedin":
-        # Extra-short LinkedIn pitch
         prompt = f"""
 Return ONLY the below short LinkedIn pitch:
 
@@ -308,11 +307,17 @@ def analyze_bulk():
             st.write(f"- {c}")
 
     pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
+
     for pt in pitch_types:
         email_content = groq_ai_generate_email(url, scraped, pt, insights)
-        subject, body = parse_email(email_content)
-        st.subheader(f"{pt} Pitch")
-        st.markdown(format_pitch_markdown(subject, body) if pt != "LinkedIn" else body)
+
+        if pt == "LinkedIn":  # FIX APPLIED HERE
+            st.subheader("LinkedIn Pitch")
+            st.markdown(email_content)
+        else:
+            subject, body = parse_email(email_content)
+            st.subheader(f"{pt} Pitch")
+            st.markdown(format_pitch_markdown(subject, body))
 
     if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
@@ -346,11 +351,17 @@ def analyze_single():
                 st.write(f"- {c}")
 
         pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
+
         for pt in pitch_types:
             email_content = groq_ai_generate_email(url, scraped, pt, insights)
-            subject, body = parse_email(email_content)
-            st.subheader(f"{pt} Pitch")
-            st.markdown(format_pitch_markdown(subject, body) if pt != "LinkedIn" else body)
+
+            if pt == "LinkedIn":  # FIX APPLIED HERE
+                st.subheader("LinkedIn Pitch")
+                st.markdown(email_content)
+            else:
+                subject, body = parse_email(email_content)
+                st.subheader(f"{pt} Pitch")
+                st.markdown(format_pitch_markdown(subject, body))
 
 ##############################
 ######## MAIN UI #############
