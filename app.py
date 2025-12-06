@@ -4,19 +4,14 @@ from bs4 import BeautifulSoup
 import pandas as pd
 import json
 import re
-import time
-import random
-import hashlib
+import tempfile
 
-# -------------------------
-# Page config
-# -------------------------
 st.set_page_config(page_title="Website Outreach AI Agent", layout="wide")
 
 # -------------------------
-# Load API key (do NOT expose)
+# Load API key
 # -------------------------
-GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
 
@@ -38,36 +33,30 @@ spam_words_map = {
 }
 
 def smart_filter(text):
-    if not text:
-        return text
     for pattern, replacement in spam_words_map.items():
         text = re.sub(pattern, replacement, text)
     return text
 
 # -------------------------
-# Scrape Website
+# Website Scraping (cached)
 # -------------------------
-def scrape_website(url):
+@st.cache_data(show_spinner=False)
+def cached_scrape(url):
     try:
-        if not url:
-            return ""
         if not url.startswith("http"):
             url = "https://" + url
-        headers = {"User-Agent": "Mozilla/5.0 (compatible; OutreachAgent/1.0)"}
-        r = requests.get(url, timeout=20, headers=headers)
-        r.raise_for_status()
+        r = requests.get(url, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
-        return soup.get_text(separator=" ", strip=True)[:4000]
-    except Exception:
+        text = soup.get_text(separator=" ", strip=True)
+        return text[:4000]
+    except Exception as e:
         return ""
 
 # -------------------------
-# Extract JSON insights
+# Extract JSON from AI response
 # -------------------------
 def extract_json(content):
     try:
-        if not content:
-            return None
         start = content.find("{")
         end = content.rfind("}") + 1
         if start == -1 or end == -1:
@@ -87,31 +76,19 @@ def extract_json(content):
             if k not in data:
                 data[k] = v
         return data
-    except Exception:
+    except:
         return None
 
 # -------------------------
-# Safe API wrapper
+# AI Insights (cached)
 # -------------------------
-def safe_api_call(func, *args, retries=3, backoff=2, **kwargs):
-    for attempt in range(1, retries + 1):
-        try:
-            return func(*args, **kwargs)
-        except Exception:
-            if attempt == retries: return None
-            time.sleep(backoff * attempt + random.random())
-    return None
-
-# -------------------------
-# AI Insights Generator
-# -------------------------
-def groq_ai_generate_insights(url, text):
-    if not GROQ_API_KEY:
-        return ""
+@st.cache_data(show_spinner=False)
+def cached_ai_insights(url, scraped_text):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
     prompt = f"""
-You are a business analyst. Extract ONLY JSON insights in EXACT format:
+You are a business analyst. Extract ONLY JSON insights.
 
+Return in this exact JSON format:
 {{
 "company_name": "Company Name",
 "company_summary": "2-3 line summary",
@@ -122,81 +99,135 @@ You are a business analyst. Extract ONLY JSON insights in EXACT format:
 "countries_of_operation": ["Country1", "Country2"]
 }}
 
-URL: {url}
-Content: {text}
+Company URL: {url}
+Website Content: {scraped_text}
 """
     body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.3}
     try:
-        r = requests.post(API_URL, headers=headers, json=body, timeout=30)
-        return r.json()["choices"][0]["message"]["content"]
-    except Exception:
-        return ""
+        r = requests.post(API_URL, headers=headers, json=body)
+        raw_json = r.json()["choices"][0]["message"]["content"]
+        return extract_json(raw_json)
+    except:
+        return None
 
 # -------------------------
-# Email Generator (2 pitches only)
+# AI Email Generator (cached)
 # -------------------------
-def groq_ai_generate_email(url, text, pitch_type, insights):
-    if not GROQ_API_KEY:
-        return ""
+@st.cache_data(show_spinner=False)
+def cached_ai_email(url, pitch_type, insights, first_name):
     headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
-
-    company = insights.get("company_name", "This Company")
-    industry = insights.get("industry", "industry")
-    products = ", ".join(insights.get("main_products", []))
-    customers = "\n".join(insights.get("ideal_customers", []))
-    audience = "\n".join(insights.get("ideal_audience", []))
+    company_name = insights.get("company_name", "This Company")
+    industry = insights.get("industry", "your industry")
+    main_products = insights.get("main_products", [])
+    ideal_customers = insights.get("ideal_customers", [])
+    ideal_audience = insights.get("ideal_audience", [])
     countries = ", ".join(insights.get("countries_of_operation", []))
+
+    products_text = ", ".join(main_products) if main_products else "your services/products"
+    customers_bullets = "\n".join(ideal_customers) if ideal_customers else "Your best-fit customers"
+    audience_bullets = "\n".join(ideal_audience) if ideal_audience else "Your target audience"
 
     if pitch_type.lower() == "professional":
         prompt = f"""
-Subject: {company}
+Return ONLY the below email:
+
+Subject: {company_name}
 
 Hi [First Name],
 
-I noticed {company} is doing great work in {industry}, especially with {products} across {countries}.
-We help companies like yours connect faster with:
+I noticed {company_name} is doing excellent work in {industry}, offering: {products_text}, across {countries}.  
+We help teams like yours connect faster with the decision-makers who matter most:
 
 • Ideal Customers:
-{customers}
+
+{customers_bullets}
 
 • Ideal Audience:
-{audience}
 
-Would you like a short sample to review?
+{audience_bullets}
+
+Would you like a short sample to see how we can help you engage these key contacts? It’s completely optional.
 
 Regards,  
 Ranjith
 """
-    elif pitch_type.lower() == "linkedin":
+    elif pitch_type.lower() == "results":
         prompt = f"""
+Return ONLY the below email:
+
+Subject: {company_name}
+
+Hello [First Name],
+
+Companies in {industry} offering {products_text} using our database have seen measurable improvements connecting with the decision-makers who matter:
+
+• Ideal Customers:
+
+{customers_bullets}
+
+• Ideal Audience:
+
+{audience_bullets}
+
+I’d be happy to share a tailored example for {company_name}.
+
+Regards,  
+Ranjith
+"""
+    elif pitch_type.lower() == "data":
+        prompt = f"""
+Return ONLY the below email:
+
+Subject: {company_name}
+
 Hi [First Name],
 
-I noticed {company} excels in {industry} with {products}.
-We help teams connect with:
-• Ideal Customers
-• Ideal Audience
+Our curated database ensures you reach only verified decision-makers relevant to {industry} and all its offerings: {products_text}.
 
-Open to a quick sample?
+• Ideal Customers:
+
+{customers_bullets}
+
+• Ideal Audience:
+
+{audience_bullets}
+
+Would you like a short sample to see the quality for yourself?
+
+Thanks,  
+Ranjith
+"""
+    elif pitch_type.lower() == "linkedin":
+        prompt = f"""
+Return ONLY the below short LinkedIn pitch:
+
+Hi [First Name],
+
+I noticed {company_name} excels in {industry}, offering: {products_text}.  
+
+We help teams connect with:  
+• Ideal Customers: {', '.join(ideal_customers) if ideal_customers else 'Your best-fit customers'}  
+• Ideal Audience: {', '.join(ideal_audience) if ideal_audience else 'Your target audience'}  
+
+Would you like a quick example of how we can help?
 
 — Ranjith
 """
     else:
-        return ""
+        return "Invalid pitch type"
 
     body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.55}
-
     try:
-        r = requests.post(API_URL, headers=headers, json=body, timeout=30)
-        return smart_filter(r.json()["choices"][0]["message"]["content"])
-    except Exception:
+        r = requests.post(API_URL, headers=headers, json=body)
+        email = r.json()["choices"][0]["message"]["content"]
+        return smart_filter(email.replace("[First Name]", str(first_name)))
+    except:
         return ""
 
 # -------------------------
-# Parse + Format Email
+# Email Parser
 # -------------------------
 def parse_email(content):
-    if not content:
-        return "", ""
     subject = ""
     body = ""
     lines = content.splitlines()
@@ -207,107 +238,155 @@ def parse_email(content):
             break
     return subject, body
 
+# -------------------------
+# Format Pitch for Markdown
+# -------------------------
 def format_pitch_markdown(subject, body):
-    return f"**Subject:** {subject}\n\n{body}"
+    formatted = f"**Subject:** {subject}\n\n"
+    lines = body.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if line.startswith("• Ideal Customers:") or line.startswith("• Ideal Audience:"):
+            formatted += f"**{line}**\n\n"
+            i += 1
+            while i < len(lines) and lines[i].strip() and not lines[i].startswith("• Ideal"):
+                formatted += f"{lines[i].strip()}\n\n"
+                i += 1
+            continue
+        elif line:
+            formatted += f"{line}\n\n"
+        i += 1
+    return formatted
 
 # -------------------------
-# BULK MODE
+# BULK UPLOAD MODE
 # -------------------------
 def analyze_bulk():
-    file = st.file_uploader("Upload CSV/Excel with 'Website'", type=["csv", "xlsx", "xls"])
-    if file is None: return
+    file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
+    if file is None:
+        return
 
-    file_hash = hashlib.md5(file.getvalue()).hexdigest()
-    if st.session_state.get("last_file_hash") != file_hash:
+    if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != file.name:
         st.session_state.bulk_index = 0
-        st.session_state.last_file_hash = file_hash
+        st.session_state.bulk_results = []
+        st.session_state.last_uploaded_file = file.name
 
-    df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
+    # Read file
+    file_name = file.name.lower()
+    if file_name.endswith(".csv"):
+        try:
+            df = pd.read_csv(file, encoding="utf-8")
+        except UnicodeDecodeError:
+            df = pd.read_csv(file, encoding="latin1", errors="ignore")
+    else:
+        df = pd.read_excel(file, engine="openpyxl")
+
     if "Website" not in df.columns:
-        st.error("Missing 'Website' column")
+        st.error("CSV/Excel must contain 'Website' column")
         return
 
-    total = len(df)
-    idx = st.session_state.get("bulk_index", 0)
-    idx_input = st.number_input("Row #", 1, total, idx+1)
-    if st.button("Jump"):
-        st.session_state.bulk_index = idx_input - 1
-        st.rerun()
+    # Process current index
+    index = st.session_state.bulk_index
+    if index >= len(df):
+        st.success("🎉 All URLs processed! Download your data below 👇")
 
-    if idx >= total:
-        st.success("All rows completed")
+        results_df = pd.DataFrame(st.session_state.bulk_results)
+
+        # CSV Download
+        csv = results_df.to_csv(index=False).encode("utf-8")
+        st.download_button("⬇️ Download Full Report (CSV)", csv, "outreach_analysis.csv", "text/csv")
+
+        # Excel Download
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            results_df.to_excel(tmp.name, index=False, engine="openpyxl")
+            with open(tmp.name, "rb") as f:
+                st.download_button("⬇️ Download Full Report (Excel)", f, "outreach_analysis.xlsx",
+                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         return
 
-    row = df.loc[idx]
-    url = row["Website"]
-    first = row.get("First Name", "There")
+    # Get current row
+    url = df.loc[index, "Website"]
+    first_name = df.loc[index].get("First Name", "N/A")
+    last_name = df.loc[index].get("Last Name", "N/A")
+    company_name_csv = df.loc[index].get("Company Name", "N/A")
+    email = df.loc[index].get("Email", "N/A")
 
-    st.info(f"Row {idx+1}/{total} → {url}")
+    st.subheader(f"Processing {index+1}/{len(df)} → {url}")
+    st.write(f"**First Name:** {first_name}")
+    st.write(f"**Last Name:** {last_name}")
+    st.write(f"**Company Name:** {company_name_csv}")
+    st.write(f"**Email:** {email}")
 
-    scraped = scrape_website(url)
-    insights_raw = safe_api_call(groq_ai_generate_insights, url, scraped)
-    insights = extract_json(insights_raw) or {}
-
+    scraped = cached_scrape(url)
+    insights = cached_ai_insights(url, scraped)
+    st.subheader("📌 Company Insights")
     st.json(insights)
 
-    pitch_types = ["Professional", "LinkedIn"]  # ← Only 2 pitches
-
+    pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
+    pitches = {}
     for pt in pitch_types:
-        email = safe_api_call(groq_ai_generate_email, url, scraped, pt, insights)
-        if not email:
-            st.warning(f"{pt} pitch missing.")
-            continue
-
-        email = email.replace("[First Name]", str(first))
-
-        if pt.lower() == "linkedin":
+        pitches[pt] = cached_ai_email(url, pt, insights, first_name)
+        if pt == "LinkedIn":
             st.subheader("LinkedIn Pitch")
-            st.markdown(email)
+            st.markdown(pitches[pt])
         else:
-            subject, body = parse_email(email)
-            company_csv = row.get("Company Name", "")
-            if company_csv and company_csv != "nan":
-                subject = str(company_csv)
+            subject, body = parse_email(pitches[pt])
+            if company_name_csv and str(company_name_csv).strip() and str(company_name_csv) != "N/A" and not pd.isna(company_name_csv):
+                subject = str(company_name_csv).strip()
             st.subheader(f"{pt} Pitch")
             st.markdown(format_pitch_markdown(subject, body))
 
-    col1, col2 = st.columns(2)
-    if col1.button("Next ➜"):
+    # Save sanitized results
+    st.session_state.bulk_results.append({
+        "Website": url,
+        "First Name": first_name,
+        "Last Name": last_name,
+        "Company Name": company_name_csv,
+        "Email": email,
+        "Insights": json.dumps(insights, ensure_ascii=False),
+        "Professional Pitch": pitches["Professional"],
+        "Results Pitch": pitches["Results"],
+        "Data Pitch": pitches["Data"],
+        "LinkedIn Pitch": pitches["LinkedIn"]
+    })
+
+    if st.button("Next Website ➜"):
         st.session_state.bulk_index += 1
-        st.rerun()
-    if col2.button("Skip ➜"):
-        st.session_state.bulk_index += 1
-        st.rerun()
+        st.experimental_rerun()
 
 # -------------------------
 # SINGLE URL MODE
 # -------------------------
 def analyze_single():
-    url = st.text_input("Website")
-    if st.button("Analyze"):
-        scraped = scrape_website(url)
-        insights_raw = safe_api_call(groq_ai_generate_insights, url, scraped)
-        insights = extract_json(insights_raw) or {}
+    url = st.text_input("Enter Website URL")
+    if st.button("Analyze Website"):
+        scraped = cached_scrape(url)
+        insights = cached_ai_insights(url, scraped)
+        if insights is None:
+            st.error("⚠️ No usable insights found")
+            return
+
+        st.subheader("📌 Company Insights")
         st.json(insights)
 
-        pitch_types = ["Professional", "LinkedIn"]  # ← Only 2 pitches
-
+        pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
         for pt in pitch_types:
-            email = safe_api_call(groq_ai_generate_email, url, scraped, pt, insights)
-            if pt.lower() == "linkedin":
+            email_content = cached_ai_email(url, pt, insights, "FirstName")
+            if pt == "LinkedIn":
                 st.subheader("LinkedIn Pitch")
-                st.markdown(email)
+                st.markdown(email_content)
             else:
-                subject, body = parse_email(email)
+                subject, body = parse_email(email_content)
                 st.subheader(f"{pt} Pitch")
                 st.markdown(format_pitch_markdown(subject, body))
 
 # -------------------------
-# MAIN
+# MAIN UI
 # -------------------------
 st.title("🌐 Website Outreach AI Agent (Groq)")
+mode = st.radio("Select Mode", ["Single URL", "Bulk CSV Upload"])
 
-mode = st.radio("Choose Mode", ["Single URL", "Bulk CSV Upload"])
 if mode == "Single URL":
     analyze_single()
 else:
