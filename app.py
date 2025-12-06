@@ -119,7 +119,7 @@ Return ONLY the below email:
 
 Subject: {company_name}
 
-Hi {First Name},
+Hi {First_Name},
 
 I noticed {company_name} is doing excellent work in {industry}, offering: {products_text}, across {countries}.  
 We help teams like yours connect faster with the decision-makers who matter most:
