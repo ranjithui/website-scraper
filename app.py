@@ -141,7 +141,7 @@ Ranjith
         prompt = f"""
 Return ONLY the below email:
 
-Subject: Boost {company_name}'s outreach results
+Subject: {company_name}
 
 Hello [First Name],
 
@@ -164,7 +164,7 @@ Ranjith
         prompt = f"""
 Return ONLY the below email:
 
-Subject: High-quality contacts for {company_name}
+Subject: {company_name}
 
 Hi [First Name],
 
