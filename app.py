@@ -117,9 +117,9 @@ def groq_ai_generate_email(url, text, pitch_type, insights):
         prompt = f"""
 Return ONLY the below email:
 
-Subject: Helping {company_name} reach the right decision-makers
+Subject: {company_name}
 
-Hi [First Name],
+Hi {First Name},
 
 I noticed {company_name} is doing excellent work in {industry}, offering: {products_text}, across {countries}.  
 We help teams like yours connect faster with the decision-makers who matter most:
