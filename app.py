@@ -262,11 +262,15 @@ def format_pitch_markdown(subject, body):
 # -------------------------
 # BULK UPLOAD MODE
 # -------------------------
+# -------------------------
+# BULK UPLOAD MODE (patched)
+# -------------------------
 def analyze_bulk():
     file = st.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
     if file is None:
         return
 
+    # Initialize session state for bulk processing
     if "last_uploaded_file" not in st.session_state or st.session_state.last_uploaded_file != file.name:
         st.session_state.bulk_index = 0
         st.session_state.bulk_results = []
@@ -286,43 +290,49 @@ def analyze_bulk():
         st.error("CSV/Excel must contain 'Website' column")
         return
 
-    # Process current index
     index = st.session_state.bulk_index
-    if index >= len(df):
+    total_rows = len(df)
+
+    if index >= total_rows:
         st.success("🎉 All URLs processed! Download your data below 👇")
+        # Export final results
+        if st.session_state.bulk_results:
+            results_df = pd.DataFrame(st.session_state.bulk_results)
+            
+            # CSV Download
+            csv = results_df.to_csv(index=False).encode("utf-8")
+            st.download_button("⬇️ Download Full Report (CSV)", csv, "outreach_analysis.csv", "text/csv")
 
-        results_df = pd.DataFrame(st.session_state.bulk_results)
-
-        # CSV Download
-        csv = results_df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Download Full Report (CSV)", csv, "outreach_analysis.csv", "text/csv")
-
-        # Excel Download
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            results_df.to_excel(tmp.name, index=False, engine="openpyxl")
-            with open(tmp.name, "rb") as f:
-                st.download_button("⬇️ Download Full Report (Excel)", f, "outreach_analysis.xlsx",
-                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            # Excel Download
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                results_df.to_excel(tmp.name, index=False, engine="openpyxl")
+                with open(tmp.name, "rb") as f:
+                    st.download_button("⬇️ Download Full Report (Excel)", f, "outreach_analysis.xlsx",
+                                       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         return
 
-    # Get current row
-    url = df.loc[index, "Website"]
-    first_name = df.loc[index].get("First Name", "N/A")
-    last_name = df.loc[index].get("Last Name", "N/A")
-    company_name_csv = df.loc[index].get("Company Name", "N/A")
-    email = df.loc[index].get("Email", "N/A")
+    # Safely access current row
+    current_row = df.iloc[index]
+    url = current_row.get("Website", "")
+    first_name = current_row.get("First Name", "N/A")
+    last_name = current_row.get("Last Name", "N/A")
+    company_name_csv = current_row.get("Company Name", "N/A")
+    email = current_row.get("Email", "N/A")
 
-    st.subheader(f"Processing {index+1}/{len(df)} → {url}")
+    st.subheader(f"Processing {index+1}/{total_rows} → {url}")
     st.write(f"**First Name:** {first_name}")
     st.write(f"**Last Name:** {last_name}")
     st.write(f"**Company Name:** {company_name_csv}")
     st.write(f"**Email:** {email}")
 
+    # Scrape and get AI insights (cached)
     scraped = cached_scrape(url)
     insights = cached_ai_insights(url, scraped)
     st.subheader("📌 Company Insights")
     st.json(insights)
 
+    # Generate pitches
     pitch_types = ["Professional", "Results", "Data", "LinkedIn"]
     pitches = {}
     for pt in pitch_types:
@@ -351,9 +361,13 @@ def analyze_bulk():
         "LinkedIn Pitch": pitches["LinkedIn"]
     })
 
+    # Move to next row
     if st.button("Next Website ➜"):
-        st.session_state.bulk_index += 1
-        st.experimental_rerun()
+        if st.session_state.bulk_index < total_rows - 1:
+            st.session_state.bulk_index += 1
+        else:
+            st.success("🎉 All URLs processed! Download your data above 👆")
+
 
 # -------------------------
 # SINGLE URL MODE
