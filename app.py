@@ -311,11 +311,19 @@ def analyze_bulk():
     for pt in pitch_types:
         email_content = groq_ai_generate_email(url, scraped, pt, insights)
 
-        if pt == "LinkedIn":  # FIX APPLIED HERE
+        # PERSONALIZATION: replace [First Name] placeholder with CSV first name
+        personalized_email = email_content.replace("[First Name]", str(first_name))
+
+        if pt == "LinkedIn":  # LinkedIn: show personalized pitch directly
             st.subheader("LinkedIn Pitch")
-            st.markdown(email_content)
+            st.markdown(personalized_email)
         else:
-            subject, body = parse_email(email_content)
+            subject, body = parse_email(personalized_email)
+
+            # SUBJECT OVERRIDE: subject should be only the Company Name from CSV when available
+            if company_name_csv and str(company_name_csv).strip() and str(company_name_csv) != "N/A" and not pd.isna(company_name_csv):
+                subject = str(company_name_csv).strip()
+
             st.subheader(f"{pt} Pitch")
             st.markdown(format_pitch_markdown(subject, body))
 
