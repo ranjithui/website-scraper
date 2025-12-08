@@ -1,25 +1,22 @@
 import streamlit as st
 import pandas as pd
 import time
-import requests
 
 st.set_page_config(page_title="Bulk Website Insights Generator", layout="wide")
 
+
 # ---------------------------
-# Mock API Function (Replace with your real API call)
+# Replace this with your real AI/Web scraping function
 # ---------------------------
 def call_api(website):
-    # Replace with real API call here
-    # response = requests.post(...)
-    # return response.json()
-
+    # --- Mocked output (replace with real scraping logic if needed) ---
     return {
         "company_name": website.replace("https://", "").replace("www.", "").split(".")[0].title(),
-        "company_summary": f"{website} appears to be a leading business in its category.",
-        "main_products": "Product A, Product B",
-        "ideal_customers": "Enterprise, SMB",
-        "ideal_audience": "Decision makers, C-Level",
-        "industry": "Unknown (auto-detect in real API)",
+        "company_summary": f"{website} appears to be a reputable business offering valuable services.",
+        "main_products": "AI Tools, SaaS Platform, Automation Software",
+        "ideal_customers": "Enterprise, SMB, Freelancers",
+        "ideal_audience": "Decision Makers, CTOs, Founders",
+        "industry": "Technology",
         "countries_of_operation": "Global"
     }
 
@@ -27,20 +24,35 @@ def call_api(website):
 # ---------------------------
 # Processing Function
 # ---------------------------
-def process_csv(df, website_column):
+def process_csv(df, website_column, live_output):
     results = []
 
+    progress = st.progress(0)
+
     for index, row in df.iterrows():
+
         website = row[website_column]
 
-        st.write(f"🌐 Processing website: **{website}** ({index+1}/{len(df)})...")
+        live_output.markdown(f"### 🔍 Processing: `{website}` ({index+1}/{len(df)})")
 
-        result = call_api(website)
+        try:
+            result = call_api(website)
 
-        combined_row = {**row.to_dict(), **result}
-        results.append(combined_row)
+            # show result live
+            live_output.json(result)
 
-        time.sleep(20)  # Delay between rows
+            combined_row = {**row.to_dict(), **result}
+            results.append(combined_row)
+
+        except Exception as e:
+            live_output.error(f"❌ Error while processing {website}: {str(e)}")
+            results.append({**row.to_dict(), "error": str(e)})
+
+        # update progress bar
+        progress.progress((index + 1) / len(df))
+
+        # 20 sec delay
+        time.sleep(20)
 
     return pd.DataFrame(results)
 
@@ -48,44 +60,45 @@ def process_csv(df, website_column):
 # ---------------------------
 # UI
 # ---------------------------
-st.title("📄 Bulk Website Insights Generator")
+st.title("📄 Bulk Website Insights Generator — Live Processing Mode")
 
-uploaded_file = st.file_uploader("Upload CSV File", type=["csv"])
+uploaded_file = st.file_uploader("📤 Upload CSV (must contain a Website/URL column)", type=["csv"])
 
 if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
-    st.write("📌 Uploaded File Preview:")
+    st.write("📌 File Preview:")
     st.dataframe(df.head())
 
-    # Detect Website column automatically
-    website_col_guess = None
+    # Detect website column intelligently
+    website_guess = None
     for col in df.columns:
-        if col.lower() == "website" or "url" in col.lower() or "domain" in col.lower():
-            website_col_guess = col
+        if col.lower() in ["website", "url", "domain"]:
+            website_guess = col
             break
 
-    # Allow user to confirm or change
     website_column = st.selectbox(
-        "Select the column containing Website URLs",
+        "Select Website Column:",
         df.columns.tolist(),
-        index=df.columns.tolist().index(website_col_guess) if website_col_guess in df.columns else 0
+        index=df.columns.tolist().index(website_guess) if website_guess else 0
     )
 
+    live_output = st.empty()
+
     if st.button("🚀 Start Processing"):
-        with st.spinner("Processing websites... please wait ⏳"):
-            result_df = process_csv(df, website_column)
+        with st.spinner("Processing websites... Please wait ⏳"):
+            final_df = process_csv(df, website_column, live_output)
 
-        st.success("🎉 Processing Complete!")
+        st.success("🎉 Processing Finished!")
 
-        st.write("📌 Final Output Preview:")
-        st.dataframe(result_df.head())
+        st.write("📌 Final Output:")
+        st.dataframe(final_df)
 
-        csv = result_df.to_csv(index=False).encode("utf-8")
+        csv = final_df.to_csv(index=False).encode("utf-8")
 
         st.download_button(
             label="📥 Download Results CSV",
             data=csv,
-            file_name="processed_website_insights.csv",
+            file_name="Website_Insights_Results.csv",
             mime="text/csv"
         )
