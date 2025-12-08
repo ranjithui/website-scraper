@@ -1,14 +1,23 @@
+import streamlit as st
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
-import time
 import json
+import time
 import re
+import os
 
+# --------------------------------------
+# CONFIG
+# --------------------------------------
+st.set_page_config(page_title="Company Insights AI", layout="wide")
 API_KEY = "YOUR_GROQ_API_KEY_HERE"
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama-3.3-70b-versatile"
 
+# --------------------------------------
+# FUNCTIONS
+# --------------------------------------
 def scrape_text(url):
     try:
         response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
@@ -18,7 +27,7 @@ def scrape_text(url):
     except:
         return ""
 
-def get_company_insights(text, url):
+def generate_insights(text, url):
     prompt = f"""
     Extract company insights from the content below.
     If a field is missing, return [] or "".
@@ -28,7 +37,7 @@ def get_company_insights(text, url):
     CONTENT:
     {text}
 
-    Output JSON as exactly:
+    Output JSON exactly as:
 
     {{
     "company_name":"",
@@ -41,47 +50,83 @@ def get_company_insights(text, url):
     }}
     """
 
-    headers = {
-        "Authorization": f"Bearer {API_KEY}",
-        "Content-Type": "application/json"
-    }
-
-    payload = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}]
-    }
-
-    resp = requests.post(API_URL, headers=headers, json=payload)
-    data = resp.json()
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    payload = {"model": MODEL, "messages": [{"role": "user", "content": prompt}]}
 
     try:
-        response_text = data["choices"][0]["message"]["content"]
-        return json.loads(response_text)
+        response = requests.post(API_URL, headers=headers, json=payload).json()
+        content = response["choices"][0]["message"]["content"]
+        return json.loads(content)
     except:
-        return {}
+        return {
+            "company_name": "",
+            "company_summary": "",
+            "main_products": [],
+            "ideal_customers": [],
+            "ideal_audience": [],
+            "industry": "",
+            "countries_of_operation": []
+        }
 
-# -----------------------------------------------
-# MAIN PROCESS FLOW
-# -----------------------------------------------
-df = pd.read_csv("input_websites.csv")  # contains 'Website' column
-results = []
+# --------------------------------------
+# UI
+# --------------------------------------
+st.title("📊 Company Insights AI Extractor")
+st.write("Upload a CSV with a column named **Website**")
 
-for i, row in df.iterrows():
-    url = row["Website"]
-    print(f"Processing ({i+1}/{len(df)}): {url}")
+uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
-    website_text = scrape_text(url)
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
 
-    insights = get_company_insights(website_text, url)
-    insights["Website"] = url  # keep original URL
+    if "Website" not in df.columns:
+        st.error("❌ The CSV must contain a column named 'Website'")
+        st.stop()
 
-    results.append(insights)
+    st.success(f"📄 Loaded {len(df)} websites.")
 
-    print("Waiting 30 seconds before next website...")
-    time.sleep(30)
+    if st.button("Start Processing"):
+        progress = st.progress(0)
+        results = []
+        output_file = "company_insights_output.csv"
 
-# Save to CSV
-output_df = pd.DataFrame(results)
-output_df.to_csv("company_insights_output.csv", index=False)
+        # Load previously saved results to resume (safety)
+        if os.path.exists(output_file):
+            results = pd.read_csv(output_file).to_dict(orient="records")
 
-print("🎯 Successfully processed & saved output to company_insights_output.csv")
+        start_index = len(results)
+
+        status_log = st.empty()
+
+        for i in range(start_index, len(df)):
+            url = df.iloc[i]["Website"]
+            status_log.write(f"🔍 Processing {i+1}/{len(df)} → {url}")
+
+            # STEP 1: Scrape website
+            text = scrape_text(url)
+
+            # STEP 2: Generate AI insights
+            insights = generate_insights(text, url)
+            insights["Website"] = url
+
+            results.append(insights)
+
+            # Save continuously so no data lost if error
+            pd.DataFrame(results).to_csv(output_file, index=False)
+
+            # Update progress bar
+            progress.progress((i+1) / len(df))
+
+            # Delay 30 seconds per website
+            status_log.write(f"⏳ Waiting 30 sec before next website...")
+            time.sleep(30)
+
+        st.success("🎯 All websites processed successfully!")
+        st.write("Download your result below 👇")
+        
+        st.download_button(
+            label="📥 Download Output CSV",
+            data=pd.DataFrame(results).to_csv(index=False),
+            file_name="company_insights_output.csv",
+            mime="text/csv"
+        )
