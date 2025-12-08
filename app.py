@@ -1,24 +1,34 @@
+# streamlit_research_selenium.py
 import streamlit as st
 import pandas as pd
-import requests
-from bs4 import BeautifulSoup
+import time
+import os
 import json
 import re
-import time
 import traceback
-import os
 from datetime import datetime
+from bs4 import BeautifulSoup
+
+# selenium
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException, TimeoutException
+from webdriver_manager.chrome import ChromeDriverManager
+
+import requests
 
 # -------------------------
 # Config
 # -------------------------
-DELAY_SECONDS = 30  # 30-second delay between rows
+DELAY_SECONDS = 30
 LOCAL_RESULTS_FILE = "research_results.csv"
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL_NAME = "llama-3.3-70b-versatile"
+MAX_RENDER_WAIT = 8  # seconds to wait after load to give JS time
 
-st.set_page_config(page_title="Local Research Collector", layout="wide")
-st.title("🔎 Local Research Collector (no pitches)")
+st.set_page_config(page_title="Research Collector (Selenium)", layout="wide")
+st.title("🔎 Research Collector — Headless Selenium + Debug logs (30s delay)")
 
 # -------------------------
 # Helpers
@@ -26,57 +36,100 @@ st.title("🔎 Local Research Collector (no pitches)")
 def log_console(msg):
     print(f"[{datetime.now().isoformat()}] {msg}", flush=True)
 
-def safe_get_text_from_url(url, max_chars=8000, timeout=12):
+def ensure_driver(headless=True):
+    """Start a Chrome webdriver (reused across pages)."""
+    options = webdriver.ChromeOptions()
+    if headless:
+        options.add_argument("--headless=new")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--ignore-certificate-errors")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    # optional user-agent to reduce bot detection
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115 Safari/537.36")
+    try:
+        service = Service(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=options)
+        return driver
+    except Exception as e:
+        log_console("Failed to start webdriver: " + str(e))
+        log_console(traceback.format_exc())
+        return None
+
+def fetch_page_with_selenium(driver, url):
+    """Return page_source and some debug info."""
+    debug = {"url": url, "status": "ok", "html_len": 0, "error": "", "final_url": url}
     try:
         if not url:
-            return ""
+            raise ValueError("Empty URL")
         if not url.startswith("http"):
             url = "https://" + url
-        r = requests.get(url, timeout=timeout)
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        text = soup.get_text(separator=" ", strip=True)
-        return text[:max_chars]
+        driver.get(url)
+        # give JS some time to execute
+        time.sleep(min(MAX_RENDER_WAIT, 2))
+        # optionally additional small wait for dynamic content
+        # try a short wait loop to see if body exists / length increases
+        prev_len = 0
+        for _ in range(3):
+            html = driver.page_source or ""
+            if len(html) > prev_len:
+                prev_len = len(html)
+            time.sleep(0.6)
+        html = driver.page_source or ""
+        debug["html_len"] = len(html)
+        debug["final_url"] = driver.current_url
+        # Try extracting http status via performance logs isn't always available; skip
+        return html, debug
+    except TimeoutException as te:
+        debug["status"] = "timeout"
+        debug["error"] = str(te)
+        log_console("Timeout fetching: " + url)
+        return "", debug
+    except WebDriverException as we:
+        debug["status"] = "webdriver_error"
+        debug["error"] = str(we)
+        log_console("WebDriverException for: " + url + " -> " + str(we))
+        return "", debug
     except Exception as e:
-        log_console("Scrape error: " + str(e))
+        debug["status"] = "error"
+        debug["error"] = str(e)
+        log_console("Error fetching page: " + str(e))
         log_console(traceback.format_exc())
-        return ""
+        return "", debug
 
-def extract_json(content):
-    """Try to pull JSON object out of model response."""
-    try:
-        start = content.find("{")
-        end = content.rfind("}") + 1
-        if start == -1 or end == -1:
-            return {}
-        data = json.loads(content[start:end])
-        return data if isinstance(data, dict) else {}
-    except Exception as e:
-        log_console("JSON extract error: " + str(e))
-        log_console(traceback.format_exc())
-        return {}
+def extract_contact_emails(text):
+    emails = re.findall(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
+    return ", ".join(sorted(set(emails)))
 
-def call_ai_for_insights(groq_api_key, url, scraped_text):
-    """
-    Calls your Groq model to extract the requested insight fields as JSON.
-    Returns a dict with keys (strings) for each requested field (values may be empty).
-    """
-    # requested fields according to user's selection:
+def extract_meta(soup):
+    meta = {}
+    title = soup.find("title")
+    meta['title'] = title.get_text(strip=True) if title else ""
+    desc = ""
+    m = soup.find("meta", attrs={"name":"description"})
+    if m and m.get("content"):
+        desc = m.get("content")
+    else:
+        m2 = soup.find("meta", attrs={"property":"og:description"})
+        desc = m2.get("content") if (m2 and m2.get("content")) else desc
+    meta['meta_description'] = desc
+    return meta
+
+def call_ai_insights(groq_api_key, url, scraped_text):
     keys = [
         "website_url", "company_name", "about", "services", "ideal_customers",
         "unique_value", "contact_info", "competitors", "tech_stack",
         "pricing_model", "target_geography", "call_to_action", "testimonials",
         "employee_size"
     ]
-
-    # Build prompt asking for ONLY JSON in exact format
     prompt = f"""
 You are a concise business analyst. Extract ONLY JSON with the following keys exactly:
 {json.dumps(keys, indent=2)}
 
-For each key provide a string or array as appropriate. If you cannot find data, return an empty string or empty array.
-Be conservative and short. For 'services' return a comma-separated string or an array. For 'ideal_customers' return short bullet-like items or array.
-Use the website content below to infer values. For 'employee_size' give an estimate like "1-10", "11-50", "51-200", "201-1000", or "1000+" if possible.
+For each key provide a short string or CSV-like string (or empty string if unknown).
+Use the website content below. Be conservative and short. For 'employee_size' give an estimate like "1-10", "11-50", "51-200", "201-1000", or "1000+".
 
 Company URL: {url}
 
@@ -84,55 +137,46 @@ Website Content:
 {scraped_text}
 """
     if not groq_api_key:
-        # If no API key provided, return minimal structure with website_url filled
+        # return minimal structure if no key provided
         return {k: (url if k == "website_url" else "") for k in keys}
-
     try:
         headers = {"Authorization": f"Bearer {groq_api_key}", "Content-Type": "application/json"}
-        body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.25}
+        body = {"model": MODEL_NAME, "messages": [{"role": "user", "content": prompt}], "temperature": 0.2}
         r = requests.post(API_URL, headers=headers, json=body, timeout=60)
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
-        parsed = extract_json(content)
-
-        # Ensure all keys exist
-        data = {}
+        # extract first JSON-looking object
+        start = content.find("{")
+        end = content.rfind("}") + 1
+        if start == -1 or end == -1:
+            # fallback: return partial
+            return {k: "" if k!="website_url" else url for k in keys}
+        parsed = json.loads(content[start:end])
+        # normalize into strings
+        out = {}
         for k in keys:
-            if k in parsed:
-                data[k] = parsed[k]
+            val = parsed.get(k, "")
+            if isinstance(val, list):
+                out[k] = ", ".join([str(x).strip() for x in val if x])
+            elif isinstance(val, dict):
+                out[k] = json.dumps(val, ensure_ascii=False)
+            elif val is None:
+                out[k] = ""
             else:
-                # try some tolerant mappings if the model used slightly different keys
-                lowered = {kk.lower(): parsed[kk] for kk in parsed}
-                if k.lower() in lowered:
-                    data[k] = lowered[k.lower()]
-                else:
-                    data[k] = "" if not isinstance(parsed, list) else []
-        # Always set website_url field explicitly
-        data["website_url"] = url
-        # Normalize arrays to comma-joined strings for CSV outputs
-        for k in ["services", "ideal_customers", "competitors", "tech_stack", "testimonials"]:
-            if isinstance(data.get(k), list):
-                data[k] = ", ".join([str(x).strip() for x in data[k] if x])
-        # Ensure simple string types
-        for k in keys:
-            if isinstance(data.get(k), dict):
-                data[k] = json.dumps(data[k], ensure_ascii=False)
-            if data.get(k) is None:
-                data[k] = ""
-        return data
+                out[k] = str(val).strip()
+        out["website_url"] = url
+        return out
     except Exception as e:
-        log_console("AI insights error: " + str(e))
+        log_console("AI call error: " + str(e))
         log_console(traceback.format_exc())
-        # return minimal structure on failure
         return {k: (url if k == "website_url" else "") for k in keys}
 
 def load_local_results():
     if os.path.exists(LOCAL_RESULTS_FILE):
         try:
-            df = pd.read_csv(LOCAL_RESULTS_FILE)
-            return df
+            return pd.read_csv(LOCAL_RESULTS_FILE)
         except Exception as e:
-            log_console("Failed to read existing local results: " + str(e))
+            log_console("Failed to read local results: " + str(e))
             log_console(traceback.format_exc())
             return pd.DataFrame()
     return pd.DataFrame()
@@ -145,17 +189,18 @@ def save_local_results(df):
         log_console(traceback.format_exc())
 
 # -------------------------
-# UI: Upload & Controls
+# UI
 # -------------------------
-st.sidebar.header("Inputs")
+st.sidebar.header("Inputs & Settings")
 uploaded = st.sidebar.file_uploader("Upload CSV or Excel with 'Website' column", type=["csv", "xlsx", "xls"])
 use_sample = st.sidebar.checkbox("Use sample websites (demo)", value=False)
+groq_key = st.sidebar.text_input("GROQ API Key (optional)", type="password")
+headless_opt = st.sidebar.checkbox("Run headless Chrome (recommended)", value=True)
+max_retries = st.sidebar.number_input("Retries per URL", min_value=0, max_value=5, value=2)
+delay_seconds = st.sidebar.number_input("Delay between rows (seconds)", min_value=5, max_value=600, value=DELAY_SECONDS)
 
 if use_sample and uploaded is None:
-    sample = pd.DataFrame({
-        "Website": ["example.com", "openai.com", "python.org"],
-    })
-    input_df = sample
+    input_df = pd.DataFrame({"Website": ["https://example.com", "https://openai.com", "https://python.org"]})
 else:
     input_df = None
     if uploaded:
@@ -170,171 +215,81 @@ else:
             input_df = pd.read_csv(uploaded, encoding="latin1", errors="ignore")
 
 if input_df is None:
-    st.info("Upload a CSV/Excel with a 'Website' column (or toggle sample).")
-else:
-    # normalize Website column name possibilities
-    possible_cols = [c for c in input_df.columns if c.strip().lower() in ("website", "url", "website_url")]
-    if not possible_cols:
-        st.error("Uploaded file must contain a 'Website' or 'URL' column.")
-    else:
-        website_col = possible_cols[0]
-        input_df = input_df.rename(columns={website_col: "Website"})
-        st.write(f"Loaded {len(input_df)} rows from input.")
-        st.dataframe(input_df.head(10))
+    st.info("Upload a CSV/Excel with 'Website' column or enable sample.")
+    st.stop()
 
-        # session state init
-        if "input_df" not in st.session_state or st.session_state.input_df.shape[0] != input_df.shape[0]:
-            st.session_state.input_df = input_df.copy()
-            st.session_state.start_index = 0
-            # load existing results and determine resume index by Website match
-            existing = load_local_results()
-            if not existing.empty:
-                processed_urls = set(existing['website_url'].astype(str).str.lower().str.strip().tolist())
-                idx = 0
-                for w in st.session_state.input_df["Website"].astype(str).tolist():
-                    if str(w).strip().lower() in processed_urls:
-                        idx += 1
-                    else:
-                        break
-                st.session_state.start_index = idx
-                st.session_state.results_df = existing
+# normalize website column
+possible_cols = [c for c in input_df.columns if c.strip().lower() in ("website", "url", "website_url")]
+if not possible_cols:
+    st.error("Uploaded file must contain a 'Website' or 'URL' column.")
+    st.stop()
+
+input_df = input_df.rename(columns={possible_cols[0]: "Website"})
+st.write(f"Loaded {len(input_df)} rows.")
+st.dataframe(input_df.head(8))
+
+# session state init
+if "input_df" not in st.session_state or st.session_state.input_df.shape[0] != input_df.shape[0]:
+    st.session_state.input_df = input_df.copy()
+    st.session_state.current_index = 0
+    # load existing results for resume
+    existing = load_local_results()
+    if not existing.empty:
+        processed = set(existing['website_url'].astype(str).str.lower().str.strip().tolist())
+        idx = 0
+        for w in st.session_state.input_df["Website"].astype(str).tolist():
+            if str(w).strip().lower() in processed:
+                idx += 1
             else:
-                # create empty results_df with chosen columns
-                columns = [
-                    "website_url", "company_name", "about", "services", "ideal_customers",
-                    "unique_value", "contact_info", "competitors", "tech_stack",
-                    "pricing_model", "target_geography", "call_to_action", "testimonials",
-                    "employee_size"
-                ]
-                st.session_state.results_df = pd.DataFrame(columns=columns)
-
-            st.session_state.current_index = st.session_state.start_index
-            st.session_state.running = False
-            st.session_state.last_processed = None
-
-        # API key input (optional)
-        groq_key = st.sidebar.text_input("GROQ API Key (optional — leave blank to disable AI calls)", type="password")
-
-        # Controls
-        col1, col2, col3 = st.columns([1,1,2])
-        with col1:
-            if st.session_state.running:
-                if st.button("Pause"):
-                    st.session_state.running = False
-            else:
-                if st.button("Start Processing"):
-                    st.session_state.running = True
-
-        with col2:
-            if st.button("Reset progress (keep uploaded file)"):
-                st.session_state.results_df = pd.DataFrame(columns=st.session_state.results_df.columns)
-                if os.path.exists(LOCAL_RESULTS_FILE):
-                    try:
-                        os.remove(LOCAL_RESULTS_FILE)
-                    except Exception:
-                        log_console("Couldn't remove local results file")
-                st.session_state.current_index = 0
-                st.session_state.running = False
-                st.warning("Progress reset. Start again when ready.")
-
-        with col3:
-            st.write(f"Next index: {st.session_state.current_index} / {len(st.session_state.input_df)}")
-            st.write(f"Saved rows: {len(st.session_state.results_df)}")
-
-        # placeholders
-        progress_placeholder = st.empty()
-        status_placeholder = st.empty()
-        sample_preview = st.empty()
-
-        # Processing loop
-        while st.session_state.running and st.session_state.current_index < len(st.session_state.input_df):
-            i = st.session_state.current_index
-            row = st.session_state.input_df.iloc[i].to_dict()
-            website = str(row.get("Website","")).strip()
-
-            status_placeholder.info(f"Processing row {i+1}/{len(st.session_state.input_df)} → {website}")
-            log_console(f"Processing index {i} -> {website}")
-
-            try:
-                scraped = safe_get_text_from_url(website)
-                insights = call_ai_for_insights(groq_key, website, scraped)
-
-                # ensure all columns exist in proper order
-                record = {
-                    "website_url": insights.get("website_url", website),
-                    "company_name": insights.get("company_name", ""),
-                    "about": insights.get("about", ""),
-                    "services": insights.get("services", ""),
-                    "ideal_customers": insights.get("ideal_customers", ""),
-                    "unique_value": insights.get("unique_value", ""),
-                    "contact_info": insights.get("contact_info", ""),
-                    "competitors": insights.get("competitors", ""),
-                    "tech_stack": insights.get("tech_stack", ""),
-                    "pricing_model": insights.get("pricing_model", ""),
-                    "target_geography": insights.get("target_geography", ""),
-                    "call_to_action": insights.get("call_to_action", ""),
-                    "testimonials": insights.get("testimonials", ""),
-                    "employee_size": insights.get("employee_size", "")
-                }
-
-                # append to results_df
-                st.session_state.results_df = pd.concat([st.session_state.results_df, pd.DataFrame([record])], ignore_index=True)
-
-                # save locally after every row
-                save_local_results(st.session_state.results_df)
-
-                # preview
-                sample_preview.markdown("### Latest Insight (preview)")
-                sample_preview.write(pd.DataFrame([record]).T.rename(columns={0:"value"}))
-
-                # advance
-                st.session_state.current_index += 1
-                st.session_state.last_processed = website
-
-            except Exception as e:
-                log_console("Processing error: " + str(e))
-                log_console(traceback.format_exc())
-                # record error row (website + error note)
-                err_rec = {"website_url": website}
-                for c in st.session_state.results_df.columns:
-                    if c not in err_rec:
-                        err_rec[c] = ""
-                err_rec["company_name"] = ""
-                err_rec["about"] = ""
-                err_rec["unique_value"] = ""
-                err_rec["contact_info"] = ""
-                err_rec["testimonials"] = ""
-                err_rec["employee_size"] = ""
-                # Optionally record error in a separate column — but per request we keep fields minimal
-                st.session_state.results_df = pd.concat([st.session_state.results_df, pd.DataFrame([err_rec])], ignore_index=True)
-                save_local_results(st.session_state.results_df)
-                st.session_state.current_index += 1
-
-            # update progress bar
-            processed = st.session_state.current_index
-            total = len(st.session_state.input_df)
-            frac = processed / total if total else 0
-            progress_placeholder.progress(min(frac, 1.0))
-            status_placeholder.write(f"Sleeping for {DELAY_SECONDS} seconds before next row...")
-            # sleep loop allowing user to pause
-            sleep_left = DELAY_SECONDS
-            while sleep_left > 0 and st.session_state.running:
-                time.sleep(1)
-                sleep_left -= 1
-            if not st.session_state.running:
-                status_placeholder.warning("Processing paused by user.")
                 break
+        st.session_state.current_index = idx
+        st.session_state.results_df = existing
+    else:
+        cols = [
+            "website_url", "company_name", "about", "services", "ideal_customers",
+            "unique_value", "contact_info", "competitors", "tech_stack",
+            "pricing_model", "target_geography", "call_to_action", "testimonials",
+            "employee_size", "debug_html_len", "debug_final_url", "status", "error", "processed_at"
+        ]
+        st.session_state.results_df = pd.DataFrame(columns=cols)
+    st.session_state.running = False
+    st.session_state.driver = None
 
-        # finished
-        if st.session_state.current_index >= len(st.session_state.input_df):
-            st.success("🎉 All rows processed!")
+# Controls
+col1, col2, col3 = st.columns([1,1,2])
+with col1:
+    if st.session_state.running:
+        if st.button("Pause"):
             st.session_state.running = False
+    else:
+        if st.button("Start Processing"):
+            st.session_state.running = True
 
-        # show results & download
-        st.subheader("Research Results Snapshot")
-        st.dataframe(st.session_state.results_df)
+with col2:
+    if st.button("Stop & Close driver"):
+        st.session_state.running = False
+        try:
+            if st.session_state.driver:
+                st.session_state.driver.quit()
+                st.session_state.driver = None
+        except Exception:
+            pass
+        st.success("Stopped and closed driver.")
 
-        csv = st.session_state.results_df.to_csv(index=False).encode("utf-8")
-        st.download_button("⬇️ Download research_results.csv", csv, "research_results.csv", "text/csv")
+with col3:
+    if st.button("Reset progress (keep upload)"):
+        st.session_state.results_df = pd.DataFrame(columns=st.session_state.results_df.columns)
+        if os.path.exists(LOCAL_RESULTS_FILE):
+            try:
+                os.remove(LOCAL_RESULTS_FILE)
+            except Exception:
+                pass
+        st.session_state.current_index = 0
+        st.session_state.running = False
+        st.warning("Progress reset.")
 
-        st.info("Notes: Runs locally. Keep machine awake while processing. If you restart the app it will resume from research_results.csv (match by website).")
+st.sidebar.write(f"Resume index: {st.session_state.current_index} / {len(st.session_state.input_df)}")
+st.sidebar.write(f"Saved rows: {len(st.session_state.results_df)}")
+
+progress_placeholder = st.empty()
+logs_pl_
