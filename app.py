@@ -10,60 +10,83 @@ import os
 # --------------------------------------
 # CONFIG
 # --------------------------------------
-st.set_page_config(page_title="Company Insights AI", layout="wide")
+st.set_page_config(page_title="📊 Company Insights AI", layout="wide")
 
-# Load Key from Streamlit Secrets
+# Load key from secrets
 API_KEY = st.secrets["GROQ_API_KEY"]
-
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama-3.3-70b-versatile"
 
 
 # --------------------------------------
-# FUNCTIONS
+# SCRAPER (Fixed & Smart)
 # --------------------------------------
-
 def scrape_text(url):
-    """Scrape website text + metadata + JSON-LD"""
+    """Scrape visible text + metadata with fallback for HTTPS/WWW."""
+    
+    if not url.startswith("http"):
+        url = "https://" + url
 
-    try:
-        response = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
-        soup = BeautifulSoup(response.text, "html.parser")
+    candidate_urls = [url]
 
-        text = " ".join(soup.stripped_strings)
+    if "www." not in url:
+        candidate_urls.append(url.replace("https://", "https://www."))
 
-        # Meta description
-        meta_desc = soup.find("meta", attrs={"name": "description"})
-        if meta_desc and meta_desc.get("content"):
-            text += " " + meta_desc["content"]
+    candidate_urls.append(url.replace("https://", "http://"))
 
-        # JSON-LD Structured data
-        for script in soup.find_all("script", type="application/ld+json"):
-            try:
-                schema = json.loads(script.text.strip())
-                text += " " + json.dumps(schema)
-            except:
-                pass
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0 Safari/537.36"
+        )
+    }
 
-        return re.sub(r"\s+", " ", text[:20000])
+    for attempt_url in candidate_urls:
+        try:
+            response = requests.get(attempt_url, timeout=15, headers=headers)
 
-    except Exception as e:
-        print(f"[SCRAPE ERROR] {url}: {e}")
-        return ""
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, "html.parser")
+
+                text = soup.get_text(" ", strip=True)
+
+                # Meta description
+                meta = soup.find("meta", attrs={"name": "description"})
+                if meta and meta.get("content"):
+                    text += " " + meta["content"]
+
+                # JSON LD
+                for script in soup.find_all("script", type="application/ld+json"):
+                    try:
+                        text += " " + script.text
+                    except:
+                        pass
+
+                cleaned = re.sub(r"\s+", " ", text)
+                return cleaned[:15000]
+        except:
+            continue
+
+    return ""
 
 
-def generate_insights(text, url, attempts=3):
-    """Call Groq API and enforce valid JSON response, with retry."""
+# --------------------------------------
+# AI CALL (Failsafe JSON)
+# --------------------------------------
+def generate_insights(text, url):
+    if len(text.strip()) < 50:
+        text = "NO SCRAPED CONTENT — infer from company name & domain context."
 
     prompt = f"""
-    Analyze the website content below and extract structured business insights.
+    Extract business insights based on the content below.
 
-    WEBSITE: {url}
+    URL: {url}
 
-    CONTENT:
+    WEBSITE TEXT:
     {text}
 
-    Return ONLY valid JSON formatted EXACTLY like this structure:
+    Return ONLY valid JSON in this exact schema:
 
     {{
         "company_name": "",
@@ -76,44 +99,39 @@ def generate_insights(text, url, attempts=3):
     }}
     """
 
-    for attempt in range(attempts):
-
-        try:
-            headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
-
-            payload = {
+    try:
+        response = requests.post(
+            API_URL,
+            headers={"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"},
+            json={
                 "model": MODEL,
                 "response_format": {"type": "json_object"},
                 "messages": [{"role": "user", "content": prompt}]
             }
+        )
 
-            response = requests.post(API_URL, headers=headers, json=payload).json()
+        return json.loads(response.json()["choices"][0]["message"]["content"])
 
-            content = response["choices"][0]["message"]["content"]
+    except Exception as e:
+        print("AI ERROR:", e)
 
-            return json.loads(content)
-
-        except Exception as e:
-            print(f"[AI ERROR] Attempt {attempt+1} for {url}: {e}")
-            time.sleep(3)
-
-    return {
-        "company_name": "",
-        "company_summary": "",
-        "main_products": [],
-        "ideal_customers": [],
-        "ideal_audience": [],
-        "industry": "",
-        "countries_of_operation": []
-    }
+        return {
+            "company_name": "",
+            "company_summary": "",
+            "main_products": [],
+            "ideal_customers": [],
+            "ideal_audience": [],
+            "industry": "",
+            "countries_of_operation": []
+        }
 
 
 # --------------------------------------
 # UI
 # --------------------------------------
-
 st.title("📊 Company Insights AI Extractor")
-st.write("Upload a CSV containing a column named **Website** to begin.")
+st.write("Upload a CSV with a column named **Website** to start.")
+
 
 uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
 
@@ -121,48 +139,47 @@ if uploaded_file:
     df = pd.read_csv(uploaded_file)
 
     if "Website" not in df.columns:
-        st.error("❌ The CSV must contain a column named 'Website'")
+        st.error("❌ CSV must contain a column named 'Website'.")
         st.stop()
 
-    st.success(f"📄 Loaded {len(df)} websites.")
+    st.success(f"📁 Loaded {len(df)} websites.")
 
     if st.button("🚀 Start Processing"):
-        progress = st.progress(0)
-        results = []
-        output_file = "company_insights_output.csv"
 
-        # Resume mode
+        output_file = "company_insights_output.csv"
+        results = []
+
+        # If already processed earlier → resume mode
         if os.path.exists(output_file):
             results = pd.read_csv(output_file).to_dict(orient="records")
 
+        progress = st.progress(0)
+        status = st.empty()
+
         start_index = len(results)
-        status_log = st.empty()
 
         for i in range(start_index, len(df)):
             url = str(df.iloc[i]["Website"]).strip()
-            status_log.write(f"🔍 Processing {i+1}/{len(df)} → {url}")
 
-            # Scrape content
-            text = scrape_text(url)
+            status.write(f"🔍 Scraping {i+1}/{len(df)} — {url}")
 
-            # AI extraction
-            insights = generate_insights(text, url)
+            scraped_text = scrape_text(url)
+            insights = generate_insights(scraped_text, url)
             insights["Website"] = url
 
             results.append(insights)
 
-            # Save continuously
             pd.DataFrame(results).to_csv(output_file, index=False)
 
-            progress.progress((i+1) / len(df))
+            progress.progress((i + 1) / len(df))
 
-            status_log.write(f"⏳ Waiting 5 sec before next website...")
+            status.write(f"⏳ Waiting 5 seconds before next URL...")
             time.sleep(5)
 
-        st.success("🎉 Completed! Download your results below.")
+        st.success("🎉 All websites processed!")
 
         st.download_button(
-            label="📥 Download Output CSV",
+            label="📥 Download Results CSV",
             data=pd.DataFrame(results).to_csv(index=False),
             file_name="company_insights_output.csv",
             mime="text/csv"
