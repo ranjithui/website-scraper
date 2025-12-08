@@ -1,58 +1,111 @@
 import streamlit as st
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
+import json
 import time
 
-st.set_page_config(page_title="Bulk Website Insights Generator", layout="wide")
+st.set_page_config(page_title="Bulk Website AI Insights", layout="wide")
+
+# ---------------------------
+# CONFIG (Uses Streamlit Secrets)
+# ---------------------------
+GROQ_KEY = st.secrets["GROQ_API_KEY"]
+API_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL = "llama-3.3-70b-versatile"
 
 
 # ---------------------------
-# Replace this with your real AI/Web scraping function
+# Scrape Website
 # ---------------------------
-def call_api(website):
-    # --- Mocked output (replace with real scraping logic if needed) ---
-    return {
-        "company_name": website.replace("https://", "").replace("www.", "").split(".")[0].title(),
-        "company_summary": f"{website} appears to be a reputable business offering valuable services.",
-        "main_products": "AI Tools, SaaS Platform, Automation Software",
-        "ideal_customers": "Enterprise, SMB, Freelancers",
-        "ideal_audience": "Decision Makers, CTOs, Founders",
-        "industry": "Technology",
-        "countries_of_operation": "Global"
+def scrape_site(url):
+    try:
+        if not url.startswith("http"):
+            url = "https://" + url
+
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+        text = soup.get_text(" ", strip=True)
+        return text[:4000]  # keep short for model efficiency
+
+    except Exception as e:
+        return f"SCRAPE_ERROR: {str(e)}"
+
+
+# ---------------------------
+# Extract ONLY JSON via AI
+# ---------------------------
+def get_ai_insights(url, scraped_text):
+    prompt = f"""
+Extract structured company insights from the website content.
+
+Return ONLY a CLEAN VALID JSON. No text outside JSON.
+
+JSON format:
+
+{{
+"company_name": "",
+"company_summary": "",
+"main_products": [],
+"ideal_customers": [],
+"ideal_audience": [],
+"industry": "",
+"countries_of_operation": []
+}}
+
+Website: {url}
+Content: {scraped_text}
+"""
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_KEY}",
+        "Content-Type": "application/json"
     }
 
+    body = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.2
+    }
+
+    try:
+        r = requests.post(API_URL, json=body, headers=headers)
+        raw = r.json()["choices"][0]["message"]["content"]
+
+        # Extract json strictly
+        start = raw.find("{")
+        end = raw.rfind("}") + 1
+
+        if start == -1 or end == -1:
+            return {"error": "Invalid AI Response"}
+
+        return json.loads(raw[start:end])
+
+    except Exception as e:
+        return {"error": str(e)}
+
 
 # ---------------------------
-# Processing Function
+# Batch Processor
 # ---------------------------
-def process_csv(df, website_column, live_output):
+def process_csv(df, website_column, live_box):
     results = []
 
-    progress = st.progress(0)
-
-    for index, row in df.iterrows():
-
+    for i, row in df.iterrows():
         website = row[website_column]
 
-        live_output.markdown(f"### 🔍 Processing: `{website}` ({index+1}/{len(df)})")
+        live_box.markdown(f"### 🔍 Processing {i+1}/{len(df)} — `{website}`")
 
-        try:
-            result = call_api(website)
+        scraped = scrape_site(website)
+        ai_data = get_ai_insights(website, scraped)
 
-            # show result live
-            live_output.json(result)
+        live_box.write("📌 **Insights:**")
+        live_box.json(ai_data)
 
-            combined_row = {**row.to_dict(), **result}
-            results.append(combined_row)
+        combined = {**row.to_dict(), **ai_data}
+        results.append(combined)
 
-        except Exception as e:
-            live_output.error(f"❌ Error while processing {website}: {str(e)}")
-            results.append({**row.to_dict(), "error": str(e)})
-
-        # update progress bar
-        progress.progress((index + 1) / len(df))
-
-        # 20 sec delay
-        time.sleep(20)
+        time.sleep(20)  # 20 sec delay
 
     return pd.DataFrame(results)
 
@@ -60,45 +113,41 @@ def process_csv(df, website_column, live_output):
 # ---------------------------
 # UI
 # ---------------------------
-st.title("📄 Bulk Website Insights Generator — Live Processing Mode")
+st.title("🌍 Bulk Website → AI Insights Generator")
 
-uploaded_file = st.file_uploader("📤 Upload CSV (must contain a Website/URL column)", type=["csv"])
+file = st.file_uploader("📤 Upload CSV (Must Contain 'Website' Column)", type=["csv"])
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
+if file:
 
-    st.write("📌 File Preview:")
+    df = pd.read_csv(file)
+    st.write("📁 Preview:")
     st.dataframe(df.head())
 
-    # Detect website column intelligently
-    website_guess = None
-    for col in df.columns:
-        if col.lower() in ["website", "url", "domain"]:
-            website_guess = col
+    # Auto-detect Website column
+    auto_col = None
+    for c in df.columns:
+        if c.lower() in ["website", "url", "domain"]:
+            auto_col = c
             break
 
-    website_column = st.selectbox(
-        "Select Website Column:",
-        df.columns.tolist(),
-        index=df.columns.tolist().index(website_guess) if website_guess else 0
-    )
+    website_column = st.selectbox("Select Website Column:", df.columns.tolist(),
+                                  index=df.columns.tolist().index(auto_col) if auto_col else 0)
 
-    live_output = st.empty()
+    live_box = st.empty()
 
     if st.button("🚀 Start Processing"):
-        with st.spinner("Processing websites... Please wait ⏳"):
-            final_df = process_csv(df, website_column, live_output)
+        with st.spinner("Running AI + Web Scraping... This may take some time ⏳"):
+            final_df = process_csv(df, website_column, live_box)
 
-        st.success("🎉 Processing Finished!")
-
-        st.write("📌 Final Output:")
+        st.success("🎉 Processing Complete!")
         st.dataframe(final_df)
 
-        csv = final_df.to_csv(index=False).encode("utf-8")
+        csv_data = final_df.to_csv(index=False).encode("utf-8")
 
         st.download_button(
-            label="📥 Download Results CSV",
-            data=csv,
-            file_name="Website_Insights_Results.csv",
+            "📥 Download Results CSV",
+            data=csv_data,
+            file_name="ai_website_insights.csv",
             mime="text/csv"
         )
+
