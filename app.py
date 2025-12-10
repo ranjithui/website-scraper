@@ -93,7 +93,10 @@ Content: {scraped_text}
 
     try:
         r = requests.post(API_URL, json=body, headers=headers, timeout=30)
-        raw = r.json()["choices"][0]["message"]["content"]
+        resp = r.json()
+        if "choices" not in resp:
+            return {"error": resp}
+        raw = resp["choices"][0]["message"]["content"]
 
         start = raw.find("{")
         end = raw.rfind("}") + 1
@@ -133,7 +136,7 @@ def process_csv(df, website_column, live_box):
         combined = {**row.to_dict(), **ai_data}
         results.append(combined)
 
-        time.sleep(20)  # 20 sec delay to avoid API rate limits  # lower delay
+        time.sleep(30)  # 30 sec delay to avoid API limits
 
     return pd.DataFrame(results)
 
