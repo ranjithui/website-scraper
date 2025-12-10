@@ -5,17 +5,23 @@ from bs4 import BeautifulSoup
 import json
 import time
 
-st.set_page_config(page_title="Bulk Website AI Insights – Live Scraping UI", layout="wide")
+# -------------------------------------------------------
+# STREAMLIT PAGE CONFIG
+# -------------------------------------------------------
+st.set_page_config(page_title="Bulk Website AI Insights – Stable Version", layout="wide")
 
 # -------------------------------------------------------
-# CONFIG
+# CONFIG (API KEY FROM SECRETS)
 # -------------------------------------------------------
-GROQ_KEY = st.secrets["GROQ_API_KEY"]
+GROQ_KEY = st.secrets.get("GROQ_API_KEY", None)
 API_URL = "https://api.groq.com/openai/v1/chat/completions"
 MODEL = "llama-3.3-70b-versatile"
 
+if not GROQ_KEY:
+    st.error("❌ Missing GROQ_API_KEY in Streamlit Secrets.")
+
 # -------------------------------------------------------
-# SCRAPER WITH MULTI-URL FALLBACK
+# SCRAPER WITH FALLBACK (HTTPS → HTTP → WWW)
 # -------------------------------------------------------
 def try_fetch(url):
     try:
@@ -23,39 +29,41 @@ def try_fetch(url):
         if r.status_code == 200:
             return r.text
     except:
-        pass
+        return None
     return None
 
 
-def scrape_site(raw_url):
-    raw_url = str(raw_url).strip()
+def scrape_site(url):
+    raw = url.strip()
 
-    base = raw_url.replace("https://", "").replace("http://", "").replace("www.", "")
-
-    attempts = [
-        f"https://{base}",
-        f"http://{base}",
-        f"https://www.{base}",
-        f"http://www.{base}",
-    ]
+    if raw.startswith("http"):
+        attempts = [raw]
+    else:
+        base = raw.replace("www.", "")
+        attempts = [
+            f"https://{base}",
+            f"http://{base}",
+            f"https://www.{base}",
+            f"http://www.{base}"
+        ]
 
     for link in attempts:
         html = try_fetch(link)
         if html:
             soup = BeautifulSoup(html, "html.parser")
             text = soup.get_text(" ", strip=True)
-            return text[:4000], link, attempts
+            return text[:4000], link
 
-    return "SCRAPE_ERROR: Could not fetch website", None, attempts
+    return "SCRAPE_ERROR: Unable to fetch site", None
 
 # -------------------------------------------------------
-# AI INSIGHTS USING STRICT JSON OUTPUT
+# AI INSIGHTS FUNCTION (STRICT JSON)
 # -------------------------------------------------------
 def get_ai_insights(url, scraped_text):
     prompt = f"""
-Extract ONLY B2B insights (ignore B2C except HNWI/UHNWI).
-
-Return ONLY clean JSON.
+Extract B2B-focused insights only.
+Avoid B2C except HNWI / UHNWI.
+Return ONLY VALID JSON.
 
 JSON format:
 {{
@@ -72,72 +80,67 @@ Website: {url}
 Content: {scraped_text}
 """
 
-    headers = {"Authorization": f"Bearer {GROQ_KEY}", "Content-Type": "application/json"}
-
     body = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.15
+        "temperature": 0.1
+    }
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_KEY}",
+        "Content-Type": "application/json"
     }
 
     try:
-        r = requests.post(API_URL, json=body, headers=headers, timeout=40)
+        r = requests.post(API_URL, json=body, headers=headers, timeout=30)
         raw = r.json()["choices"][0]["message"]["content"]
 
         start = raw.find("{")
-        end = raw.rfind("}")
-
+        end = raw.rfind("}") + 1
         if start == -1 or end == -1:
-            return {"error": "AI returned invalid JSON"}
+            return {"error": "Invalid AI JSON"}
 
-        return json.loads(raw[start:end + 1])
+        return json.loads(raw[start:end])
 
     except Exception as e:
         return {"error": str(e)}
 
 # -------------------------------------------------------
-# PROCESSOR (SHOWS LIVE UPDATES IN UI)
+# PROCESSOR – STREAMS LIVE UI UPDATES
 # -------------------------------------------------------
 def process_csv(df, website_column, live_box):
     results = []
 
     for idx, row in df.iterrows():
-        website = row[website_column]
+        site = str(row[website_column]).strip()
 
-        live_box.markdown(f"## 🔍 Processing {idx+1}/{len(df)} – **{website}**")
+        live_box.markdown(f"## 🔍 Processing {idx+1}/{len(df)} – `{site}`")
 
-        scraped_text, final_url, attempts = scrape_site(website)
-
-        # Show fallback attempts
-        with st.expander("🌐 URL Attempts", expanded=False):
-            st.write(attempts)
+        scraped_text, final_url = scrape_site(site)
 
         if final_url:
-            live_box.success(f"✅ Working URL: **{final_url}**")
+            live_box.write(f"🌐 Using URL: **{final_url}**")
         else:
-            live_box.error("❌ No valid URL found, using raw domain.")
+            live_box.error("❌ Could not fetch website.")
 
-        # Show scraped data live
-        live_box.write("### 📄 Scraped Content:")
-        live_box.write(scraped_text[:600] + "...")
+        live_box.write("### 🧩 Scraped Text:")
+        live_box.write(scraped_text[:500] + "...")
 
-        # AI extraction
-        ai_data = get_ai_insights(final_url or website, scraped_text)
-
-        live_box.write("### 🤖 AI Insights JSON:")
+        ai_data = get_ai_insights(final_url or site, scraped_text)
+        live_box.write("### 🤖 AI Insights:")
         live_box.json(ai_data)
 
         combined = {**row.to_dict(), **ai_data}
         results.append(combined)
 
-        time.sleep(1.5)
+        time.sleep(20)  # 20 sec delay to avoid API rate limits  # lower delay
 
     return pd.DataFrame(results)
 
 # -------------------------------------------------------
-# UI
+# UI LAYOUT
 # -------------------------------------------------------
-st.title("🌍 Live Website Scraper + AI B2B Insights")
+st.title("🌍 Bulk Website → AI Insights (Live Scraping Version)")
 
 file = st.file_uploader("📤 Upload CSV (must contain Website column)", type=["csv"])
 
@@ -146,25 +149,24 @@ if file:
     st.write("### 📁 Preview:")
     st.dataframe(df.head())
 
-    # Auto-detect Website column
-    possible_cols = ["website", "url", "domain"]
-    auto_col = next((c for c in df.columns if c.lower() in possible_cols), df.columns[0])
+    # Auto detect column
+    auto_col = next((c for c in df.columns if c.lower() in ["website", "url", "domain"]), df.columns[0])
 
-    website_column = st.selectbox("Select Website Column", df.columns, index=list(df.columns).index(auto_col))
+    website_column = st.selectbox("Website Column", df.columns, index=list(df.columns).index(auto_col))
 
     live_box = st.empty()
 
     if st.button("🚀 Start Processing", use_container_width=True):
-        with st.spinner("Scraping websites + generating AI insights..."):
+        with st.spinner("Running live scraping + AI..."):
             final_df = process_csv(df, website_column, live_box)
 
-        st.success("🎉 Processing Complete!")
+        st.success("🎉 Completed All Rows!")
         st.dataframe(final_df)
 
         st.download_button(
-            "📥 Download Results CSV",
+            "📥 Download CSV",
             data=final_df.to_csv(index=False).encode("utf-8"),
-            file_name="ai_website_insights.csv",
+            file_name="ai_scraped_insights.csv",
             mime="text/csv",
             use_container_width=True,
         )
