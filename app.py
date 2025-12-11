@@ -33,7 +33,12 @@ def scrape_site(url):
         attempts = [raw]
     else:
         base = raw.replace("www.", "")
-        attempts = [f"https://{base}", f"http://{base}", f"https://www.{base}", f"http://www.{base}"]
+        attempts = [
+            f"https://{base}",
+            f"http://{base}",
+            f"https://www.{base}",
+            f"http://www.{base}"
+        ]
 
     for link in attempts:
         html = try_fetch(link)
@@ -86,9 +91,9 @@ Content: {scraped_text}
         return {"error": str(e)}
 
 # --------------------
-# Processor (batch 50)
+# Processor (batch 40)
 # --------------------
-def process_csv(df, website_column, live_box, batch_size=50):
+def process_csv(df, website_column, live_box, batch_size=40):
     if 'status' not in df.columns:
         df['status'] = ''
 
@@ -120,8 +125,9 @@ def process_csv(df, website_column, live_box, batch_size=50):
 # --------------------
 # UI
 # --------------------
-st.title("🌍 Bulk Website → AI Insights (Batch 50 per run)")
+st.title("🌍 Bulk Website → AI Insights (Batch 40 per run)")
 file = st.file_uploader("📤 Upload CSV", type=["csv"])
+
 if file:
     df = pd.read_csv(file)
     st.write("### Preview")
@@ -134,7 +140,14 @@ if file:
 
     if st.button("🚀 Start Processing Batch", use_container_width=True):
         with st.spinner("Processing batch..."):
-            final_df = process_csv(df, website_column, live_box, batch_size=50)
+            final_df = process_csv(df, website_column, live_box, batch_size=40)
+
         st.success("🎉 Batch Completed!")
         st.dataframe(final_df)
-        st.download_button("📥 Download CSV", data=final_df.to_csv(index=False).encode('utf-8'), file_name="ai_batch_insights.csv", mime="text/csv")
+
+        st.download_button(
+            "📥 Download CSV",
+            data=final_df.to_csv(index=False).encode('utf-8'),
+            file_name="ai_batch_insights.csv",
+            mime="text/csv"
+        )
